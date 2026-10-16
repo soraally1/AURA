@@ -77,6 +77,8 @@ export interface DailyForecast {
   wind_direction_compass: string;
   dispersion_condition: string;
   precipitation_mm: number;
+  temperature_c?: number;
+  weather_condition?: string;
   summary: string;
   recommendations: string[];
 }

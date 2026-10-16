@@ -107,3 +107,64 @@ export interface ScinMetadataResponse {
   scin_symptoms: string[];
   environmental_conditions: Record<string, string[]>;
 }
+
+/**
+ * 3. Pollution 1-Week Health Impact AI (Level Oksigen, Suhu Badan, Kulit, Dehidrasi, Rekomendasi)
+ */
+export interface PollutionHealthIndicator {
+  value: string;
+  status: string;
+  description?: string;
+}
+
+export interface PollutionRecommendation {
+  id: string;
+  title: string;
+  description: string;
+  icon_type: 'mask' | 'water' | 'mobility' | string;
+}
+
+export interface PollutionExposureStats {
+  total_indoor_minutes?: number;
+  total_outdoor_minutes?: number;
+  average_outdoor_aqi?: number;
+  average_outdoor_pm25?: number;
+  max_aqi?: number;
+  worst_area_name?: string;
+  worst_area_aqi?: number;
+}
+
+export interface PollutionHealthAnalysisData {
+  oxygen_level: PollutionHealthIndicator;
+  body_temperature: PollutionHealthIndicator;
+  skin_condition: PollutionHealthIndicator;
+  dehydration_level: PollutionHealthIndicator;
+  recommendations: PollutionRecommendation[];
+  general_advice?: string;
+  doctor_advice?: string;
+  doctor_diagnosis?: string;
+  summary?: string;
+  impact_score?: number;
+  risk_level?: string;
+  stats?: PollutionExposureStats;
+  severity_level?: 'low' | 'moderate' | 'high' | 'critical' | string;
+  analyzed_at?: string;
+}
+
+export interface PollutionHealthAnalysisResponse {
+  success: boolean;
+  data: PollutionHealthAnalysisData;
+  message?: string;
+}
+
+export interface PollutionHealthAnalysisContext {
+  lat?: number;
+  lon?: number;
+  location_name?: string;
+  zone_id?: string;
+  average_risk_score?: number;
+  peak_risk_day?: string;
+  predicted_aqi?: number;
+  total_outdoor_minutes?: number;
+}
+

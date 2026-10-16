@@ -37,6 +37,8 @@ import { aiService } from '@/services/aiService';
 import { CoughPredictionResponse, CoughMobilityContext } from '@/types/ai';
 import { useAuth } from '@/context/auth-context';
 import { backgroundMobilityTracker } from '@/services/backgroundMobilityTracker';
+import { AudioToWavConverter, AudioToWavConverterRef } from '@/components/AudioToWavConverter';
+import { lungHistoryService } from '@/services/lungHistoryService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MIC_WIDTH = Math.min(SCREEN_WIDTH * 0.52, 220);
@@ -342,6 +344,7 @@ export default function LungCheckScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const converterRef = useRef<AudioToWavConverterRef>(null);
 
   const [state, setState] = useState<DetectionState>('idle');
   const [timer, setTimer] = useState(0);
@@ -447,18 +450,36 @@ export default function LungCheckScreen() {
         usia: user?.usia,
       };
 
+      // ─── Konversi file audio rekaman (.m4a/.aac) ke standar WAV 16-bit PCM (16kHz) sebelum dikirim ───
+      let finalAudioUri = uri;
       try {
-        const response = await aiService.predictCough(uri, mobilityContext);
+        if (converterRef.current) {
+          console.log('[CoughCheck] Mengonversi audio batuk ke format WAV 16kHz sebelum dikirim ke server AI...');
+          finalAudioUri = await converterRef.current.convertToWav(uri, 16000);
+          console.log('[CoughCheck] Konversi ke WAV berhasil:', finalAudioUri);
+        }
+      } catch (convErr: any) {
+        console.warn('[CoughCheck] Konversi ke WAV gagal, fallback ke original:', convErr?.message || convErr);
+      }
+
+      try {
+        const response = await aiService.predictCough(finalAudioUri, mobilityContext);
         if (isMounted) {
-          setResultData(response);
-          setState('result');
+          // Simpan hasil ke riwayat lokal & buka dedicated result page
+          const saved = await lungHistoryService.saveScan(response, finalAudioUri);
+          setState('idle');
+          setRecordedUri(null);
+          router.push({
+            pathname: '/lung-result',
+            params: { id: saved.id },
+          });
         }
       } catch (err: any) {
         console.error('[CoughCheck] AI prediction failed:', err);
         if (isMounted) {
           setErrorMessage(
             err?.message ||
-              'Tidak dapat terhubung ke server ONNX ICBHI (http://localhost:8000). Pastikan backend onnxaura sudah berjalan.'
+              'Tidak dapat terhubung ke server ONNX ICBHI batuk. Pastikan koneksi internet stabil.'
           );
           setState('error');
         }
@@ -554,8 +575,15 @@ export default function LungCheckScreen() {
           </Pressable>
         </View>
 
-        {/* Right Balancer Spacer (matches backBtn width for true centering) */}
-        <View style={styles.backBtnSpacer} />
+        {/* Riwayat Batuk Button */}
+        <Pressable
+          style={styles.backBtn}
+          onPress={() => router.push('/lung-result')}
+          hitSlop={12}
+          accessibilityLabel="Riwayat Analisis Batuk"
+        >
+          <Ionicons name="time-outline" size={22} color="white" />
+        </Pressable>
       </View>
 
       {/* ─── 2. TITLE & SUBTITLE ─── */}
@@ -642,6 +670,9 @@ export default function LungCheckScreen() {
           </View>
         )}
       </View>
+
+      {/* Hidden Web Audio WAV Converter for universal cross-platform M4A->WAV conversion */}
+      <AudioToWavConverter ref={converterRef} />
     </View>
   );
 }

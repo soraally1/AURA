@@ -1,19 +1,14 @@
-import { zonesApi } from '@/services/zonesApi';
 import { locationService } from '@/services/locationService';
 import {
-  terrainService,
-  LandscapeType,
   classifyTerrainByName,
-  getRealtimeTerrain,
   getLandscapeAsset,
-  getLandscapeLabel,
   getLandscapeIcon,
+  getLandscapeLabel,
+  getRealtimeTerrain,
+  LandscapeType,
+  terrainService,
 } from '@/services/terrainService';
-import {
-  getImpactColor,
-  getImpactBgColor,
-  getTrafficSeverityColor,
-} from '@/utils/impact-helpers';
+import { zonesApi } from '@/services/zonesApi';
 import {
   DailyForecast,
   ImpactLevel,
@@ -21,11 +16,16 @@ import {
   TrafficSeverity,
   WeeklyAnalysisResponse,
 } from '@/types/zones';
+import {
+  getImpactBgColor,
+  getImpactColor,
+  getTrafficSeverityColor,
+} from '@/utils/impact-helpers';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -42,444 +42,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withSpring,
-  withDelay,
-  Easing,
-} from 'react-native-reanimated';
+import { CityBuildingSplash, PageTransitionSplash } from '@/components/splash/CityBuildingSplash';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CityBuildingSplash — Animasi Mulus Gedung Kota Bertingkat Muncul Berurutan
-// Memanfaatkan aset asli "kota.png" dipisah dalam 7 irisan arsitektur yang muncul
-// satu per satu dari bawah tanah ke angkasa dengan fisika spring elastis native.
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface SliceConfig {
-  id: string;
-  leftPct: number;
-  widthPct: number;
-  delay: number;
-  riseRatio: number;
-  damping: number;
-  stiffness: number;
-  mass: number;
-  scaleY: number;
-}
-
-const CITY_SLICES: SliceConfig[] = [
-  // Slice 0: Gedung pencakar langit kaca biru kiri (paling tinggi)
-  {
-    id: 'left-tall',
-    leftPct: 0,
-    widthPct: 16.5,
-    delay: 440,
-    riseRatio: 0.88,
-    damping: 14,
-    stiffness: 85,
-    mass: 0.85,
-    scaleY: 1.15,
-  },
-  // Slice 1: Gedung gaya klasik bertiang & atap merah kiri
-  {
-    id: 'left-mid',
-    leftPct: 14.5,
-    widthPct: 18,
-    delay: 240,
-    riseRatio: 0.75,
-    damping: 13,
-    stiffness: 95,
-    mass: 0.8,
-    scaleY: 1.10,
-  },
-  // Slice 2: Menara jarum & deretan gedung bertingkat kiri-tengah
-  {
-    id: 'left-spire',
-    leftPct: 30.5,
-    widthPct: 16,
-    delay: 100,
-    riseRatio: 0.65,
-    damping: 14,
-    stiffness: 105,
-    mass: 0.75,
-    scaleY: 1.06,
-  },
-  // Slice 3: Tengah sungai, jembatan, tugu monumen & cakrawala (MUNCUL PERTAMA)
-  {
-    id: 'center-skyline',
-    leftPct: 44.5,
-    widthPct: 20,
-    delay: 0,
-    riseRatio: 0.55,
-    damping: 15,
-    stiffness: 100,
-    mass: 0.8,
-    scaleY: 1.05,
-  },
-  // Slice 4: Deretan menara perkantoran kanan-tengah
-  {
-    id: 'right-spire',
-    leftPct: 62.5,
-    widthPct: 15,
-    delay: 130,
-    riseRatio: 0.65,
-    damping: 14,
-    stiffness: 105,
-    mass: 0.75,
-    scaleY: 1.06,
-  },
-  // Slice 5: Gedung bertingkat modern krem & papan iklan kanan
-  {
-    id: 'right-mid',
-    leftPct: 75.5,
-    widthPct: 15,
-    delay: 280,
-    riseRatio: 0.75,
-    damping: 13,
-    stiffness: 95,
-    mass: 0.8,
-    scaleY: 1.10,
-  },
-  // Slice 6: Mega-gedung pencakar langit kaca biru kanan (grand finale)
-  {
-    id: 'right-tall',
-    leftPct: 88.5,
-    widthPct: 13,
-    delay: 520,
-    riseRatio: 0.88,
-    damping: 14,
-    stiffness: 85,
-    mass: 0.85,
-    scaleY: 1.15,
-  },
-];
-
-function BuildingSliceItem({
-  config,
-  heroHeight,
-  screenWidth,
-  kotaAsset,
-}: {
-  config: SliceConfig;
-  heroHeight: number;
-  screenWidth: number;
-  kotaAsset: any;
-}) {
-  const initialOffset = heroHeight * config.riseRatio;
-  const translateY = useSharedValue(initialOffset);
-  const opacity = useSharedValue(0.15);
-  const scaleY = useSharedValue(config.scaleY);
-  const scaleX = useSharedValue(0.96);
-
-  useEffect(() => {
-    translateY.value = initialOffset;
-    opacity.value = 0.15;
-    scaleY.value = config.scaleY;
-    scaleX.value = 0.96;
-
-    // Animasi naik dengan spring lembut & elastis
-    translateY.value = withDelay(
-      config.delay,
-      withSpring(0, {
-        damping: config.damping,
-        stiffness: config.stiffness,
-        mass: config.mass,
-      })
-    );
-
-    // Fade-in halus ke penuh
-    opacity.value = withDelay(
-      config.delay,
-      withTiming(1, {
-        duration: 260,
-        easing: Easing.out(Easing.quad),
-      })
-    );
-
-    // Pemulihan squash & stretch kembali ke 1.0
-    scaleY.value = withDelay(
-      config.delay,
-      withSpring(1.0, { damping: 12, stiffness: 110 })
-    );
-    scaleX.value = withDelay(
-      config.delay,
-      withSpring(1.0, { damping: 12, stiffness: 110 })
-    );
-  }, [config, heroHeight, initialOffset]);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: translateY.value },
-      { scaleY: scaleY.value },
-      { scaleX: scaleX.value },
-    ],
-    opacity: opacity.value,
-  }));
-
-  const imageOffsetLeft = -screenWidth * (config.leftPct / 100);
-
-  return (
-    <Animated.View
-      style={[
-        {
-          position: 'absolute',
-          top: 0,
-          bottom: 0,
-          left: `${config.leftPct}%` as any,
-          width: `${config.widthPct}%` as any,
-          overflow: 'hidden',
-          zIndex: 2,
-        },
-        animStyle,
-      ]}
-      pointerEvents="none"
-    >
-      <Image
-        source={kotaAsset}
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: imageOffsetLeft,
-          width: screenWidth,
-          height: heroHeight,
-        }}
-        contentFit="cover"
-        contentPosition="bottom"
-      />
-    </Animated.View>
-  );
-}
-
-function CityForegroundLayer({
-  heroHeight,
-  kotaAsset,
-}: {
-  heroHeight: number;
-  kotaAsset: any;
-}) {
-  const fgHeight = Math.round(heroHeight * 0.22);
-  const translateY = useSharedValue(20);
-  const opacity = useSharedValue(0.2);
-
-  useEffect(() => {
-    translateY.value = 20;
-    opacity.value = 0.2;
-
-    translateY.value = withDelay(
-      30,
-      withSpring(0, { damping: 15, stiffness: 100 })
-    );
-    opacity.value = withDelay(
-      30,
-      withTiming(1, { duration: 240 })
-    );
-  }, []);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
-    opacity: opacity.value,
-  }));
-
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        {
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: fgHeight,
-          overflow: 'hidden',
-          zIndex: 4,
-        },
-        animStyle,
-      ]}
-    >
-      <Image
-        source={kotaAsset}
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: heroHeight,
-        }}
-        contentFit="cover"
-        contentPosition="bottom"
-      />
-    </Animated.View>
-  );
-}
-
-function ShimmerParticle({
-  leftPct,
-  bottomStart,
-  delay,
-  duration,
-  size,
-  color,
-}: {
-  leftPct: number;
-  bottomStart: number;
-  delay: number;
-  duration: number;
-  size: number;
-  color: string;
-}) {
-  const translateY = useSharedValue(0);
-  const opacity = useSharedValue(0);
-  const scale = useSharedValue(0.4);
-
-  useEffect(() => {
-    translateY.value = 0;
-    opacity.value = 0;
-    scale.value = 0.4;
-
-    translateY.value = withDelay(
-      delay,
-      withTiming(-80, { duration, easing: Easing.out(Easing.quad) })
-    );
-    opacity.value = withDelay(
-      delay,
-      withTiming(0.9, { duration: duration * 0.35 }, () => {
-        opacity.value = withTiming(0, { duration: duration * 0.65 });
-      })
-    );
-    scale.value = withDelay(
-      delay,
-      withSpring(1, { damping: 8, stiffness: 90 })
-    );
-  }, [delay, duration]);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: translateY.value },
-      { scale: scale.value },
-    ],
-    opacity: opacity.value,
-  }));
-
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        {
-          position: 'absolute',
-          left: `${leftPct}%` as any,
-          bottom: bottomStart,
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: color,
-          shadowColor: color,
-          shadowOffset: { width: 0, height: 0 },
-          shadowOpacity: 0.8,
-          shadowRadius: 4,
-          elevation: 3,
-          zIndex: 5,
-        },
-        animStyle,
-      ]}
-    />
-  );
-}
-
-function MasterCrossfadeLayer({
-  kotaAsset,
-}: {
-  kotaAsset: any;
-}) {
-  const opacity = useSharedValue(0);
-
-  useEffect(() => {
-    opacity.value = 0;
-    // Setelah seluruh gedung selesai naik dan stabil (~1250ms), crossfade ke gambar utuh
-    opacity.value = withDelay(
-      1250,
-      withTiming(1, { duration: 450, easing: Easing.out(Easing.cubic) })
-    );
-  }, []);
-
-  const animStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-  }));
-
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[StyleSheet.absoluteFill, { zIndex: 6 }, animStyle]}
-    >
-      <Image
-        source={kotaAsset}
-        style={StyleSheet.absoluteFill}
-        contentFit="cover"
-        contentPosition="bottom"
-      />
-    </Animated.View>
-  );
-}
-
-function CityBuildingSplash({
-  heroHeight,
-}: {
-  heroHeight: number;
-}) {
-  const kotaAsset = getLandscapeAsset('kota');
-  const [layoutWidth, setLayoutWidth] = useState(SCREEN_WIDTH);
-
-  return (
-    <View
-      onLayout={(e) => {
-        const w = Math.round(e.nativeEvent.layout.width);
-        if (w > 0 && w !== layoutWidth) setLayoutWidth(w);
-      }}
-      style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}
-      pointerEvents="none"
-    >
-      {/* 1. Gradasi Langit Biru Cerah (Identik dengan palet langit kota.png) */}
-      <LinearGradient
-        colors={['#4ABCEF', '#7CE0FB', '#D2F5FD']}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-
-      {/* 2. Tujuh Klaster Gedung Asli kota.png Muncul Berurutan */}
-      {CITY_SLICES.map((slice) => (
-        <BuildingSliceItem
-          key={slice.id}
-          config={slice}
-          heroHeight={heroHeight}
-          screenWidth={layoutWidth}
-          kotaAsset={kotaAsset}
-        />
-      ))}
-
-      {/* 3. Lapisan Foreground Depan (Pohon, Bunga, Pagar Putih & Trotoar) */}
-      <CityForegroundLayer
-        heroHeight={heroHeight}
-        kotaAsset={kotaAsset}
-      />
-
-      {/* 4. Partikel Berkilau Halus saat Gedung Mencuat ke Langit */}
-      <ShimmerParticle leftPct={8} bottomStart={heroHeight * 0.3} delay={420} duration={850} size={7} color="#FFFFFF" />
-      <ShimmerParticle leftPct={16} bottomStart={heroHeight * 0.35} delay={480} duration={800} size={5} color="#E0F2FE" />
-      <ShimmerParticle leftPct={22} bottomStart={heroHeight * 0.28} delay={260} duration={800} size={6} color="#BAE6FD" />
-      <ShimmerParticle leftPct={50} bottomStart={heroHeight * 0.25} delay={100} duration={750} size={6} color="#FFFFFF" />
-      <ShimmerParticle leftPct={78} bottomStart={heroHeight * 0.3} delay={300} duration={800} size={6} color="#BAE6FD" />
-      <ShimmerParticle leftPct={92} bottomStart={heroHeight * 0.35} delay={520} duration={850} size={8} color="#FFFFFF" />
-      <ShimmerParticle leftPct={86} bottomStart={heroHeight * 0.28} delay={560} duration={750} size={5} color="#E0F2FE" />
-
-      {/* 5. Master Seamless Crossfade untuk Kesempurnaan Visual Jangka Panjang */}
-      <MasterCrossfadeLayer kotaAsset={kotaAsset} />
-    </View>
-  );
-}
 
 export interface LocationItem {
   id?: string;
@@ -613,6 +178,7 @@ export default function PollutionImpactScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [animKey, setAnimKey] = useState(0);
+  const [isNavigatingToAi, setIsNavigatingToAi] = useState(false);
 
   // Update landscape strictly according to real-time location & elevation
   const syncRealtimeLandscape = useCallback(
@@ -781,6 +347,28 @@ export default function PollutionImpactScreen() {
     }
   };
 
+  // Navigasi 1-Click untuk AI Analisis Dampak Polusi ke Tubuh (1 Minggu)
+  const handleNavigateToAiImpact = () => {
+    setIsNavigatingToAi(true);
+    setTimeout(() => {
+      router.push({
+        pathname: '/ai-pollution-impact' as any,
+        params: {
+          lat: currentLocation.lat.toString(),
+          lon: currentLocation.lon.toString(),
+          name: analysisData?.location_name || currentLocation.name,
+          zone_id: currentLocation.zone_id || '',
+          average_risk_score: analysisData?.average_risk_score ? analysisData.average_risk_score.toString() : '0',
+          peak_risk_day: analysisData?.peak_risk_day || '',
+        },
+      });
+      setTimeout(() => {
+        setIsNavigatingToAi(false);
+      }, 600);
+    }, 450);
+  };
+
+
   return (
     <View style={styles.container}>
       <RNStatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
@@ -844,17 +432,28 @@ export default function PollutionImpactScreen() {
                 <Ionicons name="chevron-down" size={16} color="#64748B" />
               </Pressable>
 
-              <Pressable
-                onPress={() => {
-                  setAnimKey((k) => k + 1);
-                  fetchAnalysis();
-                  fetchNearbyHotspots(currentLocation.lat, currentLocation.lon);
-                }}
-                style={styles.backButton}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons name="refresh" size={20} color="#0284C7" />
-              </Pressable>
+              <View style={styles.headerRightActions}>
+                <Pressable
+                  onPress={handleNavigateToAiImpact}
+                  style={[styles.backButton, styles.aiHeaderBtn]}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityLabel="Analisis Dampak AI"
+                >
+                  <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    setAnimKey((k) => k + 1);
+                    fetchAnalysis();
+                    fetchNearbyHotspots(currentLocation.lat, currentLocation.lon);
+                  }}
+                  style={styles.backButton}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="refresh" size={20} color="#0284C7" />
+                </Pressable>
+              </View>
             </View>
 
             {/* REAL-TIME TERRAIN BADGE INDICATOR (Derived from User's exact GPS & Altitude) */}
@@ -920,351 +519,408 @@ export default function PollutionImpactScreen() {
           colors={['#EBF8FD', '#DEF2FA', '#D4EDF7']}
           style={styles.detailsGradientSection}
         >
-          {/* Error Banner with Retry */}
-          {errorMessage && (
-            <View style={styles.errorCard}>
-              <Ionicons name="alert-circle" size={24} color="#EF4444" />
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={styles.errorTitle}>Koneksi API Terkendala</Text>
-                <Text style={styles.errorDesc}>{errorMessage}</Text>
-              </View>
-              <Pressable style={styles.retryButton} onPress={() => fetchAnalysis()}>
-                <Text style={styles.retryButtonText}>Ulangi</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {/* 1. KARTU RINGKASAN MINGGUAN (Weekly Overview Card) */}
-          {analysisData && (
-            <View style={styles.weeklySummaryCard}>
-              <View style={styles.weeklySummaryHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.weeklySummarySubtitle}>Prakiraan 7 Hari</Text>
-                  <Text style={styles.weeklySummaryTitle}>Status Risiko Lingkungan</Text>
+            {/* Error Banner with Retry */}
+            {errorMessage && (
+              <View style={styles.errorCard}>
+                <Ionicons name="alert-circle" size={24} color="#EF4444" />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.errorTitle}>Koneksi API Terkendala</Text>
+                  <Text style={styles.errorDesc}>{errorMessage}</Text>
                 </View>
+                <Pressable style={styles.retryButton} onPress={() => fetchAnalysis()}>
+                  <Text style={styles.retryButtonText}>Ulangi</Text>
+                </Pressable>
+              </View>
+            )}
 
-                {/* Overall Status Badge */}
-                <View
-                  style={[
-                    styles.overallBadge,
-                    {
-                      backgroundColor: getImpactBgColor(
-                        analysisData.overall_weekly_status
-                      ),
-                      borderColor: getImpactColor(analysisData.overall_weekly_status),
-                    },
-                  ]}
-                >
+            {/* 1. KARTU RINGKASAN MINGGUAN (Weekly Overview Card) */}
+            {analysisData && (
+              <View style={styles.weeklySummaryCard}>
+                <View style={styles.weeklySummaryHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.weeklySummarySubtitle}>Prakiraan 7 Hari</Text>
+                    <Text style={styles.weeklySummaryTitle}>Status Risiko Lingkungan</Text>
+                  </View>
+
+                  {/* Overall Status Badge */}
                   <View
                     style={[
-                      styles.statusDot,
+                      styles.overallBadge,
                       {
-                        backgroundColor: getImpactColor(
+                        backgroundColor: getImpactBgColor(
                           analysisData.overall_weekly_status
                         ),
-                      },
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.overallBadgeText,
-                      {
-                        color: getImpactColor(analysisData.overall_weekly_status),
+                        borderColor: getImpactColor(analysisData.overall_weekly_status),
                       },
                     ]}
                   >
-                    {analysisData.overall_weekly_status}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Metrics Row: Average Risk Score & Peak Risk Day */}
-              <View style={styles.weeklyMetricsRow}>
-                {/* Average Risk Score */}
-                <View style={styles.metricBlock}>
-                  <Text style={styles.metricBlockLabel}>Rata-rata Risiko</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-                    <Text style={styles.metricBlockValue}>
-                      {analysisData.average_risk_score.toFixed(1)}
-                    </Text>
-                    <Text style={styles.metricBlockUnit}>/100</Text>
-                  </View>
-                  <View style={styles.progressBarTrack}>
                     <View
                       style={[
-                        styles.progressBarFill,
+                        styles.statusDot,
                         {
-                          width: `${Math.min(
-                            100,
-                            Math.max(0, analysisData.average_risk_score)
-                          )}%`,
                           backgroundColor: getImpactColor(
                             analysisData.overall_weekly_status
                           ),
                         },
                       ]}
                     />
-                  </View>
-                </View>
-
-                <View style={styles.metricDivider} />
-
-                {/* Peak Risk Day */}
-                <View style={styles.metricBlock}>
-                  <Text style={styles.metricBlockLabel}>Hari Paling Rawan</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                    <Ionicons name="warning" size={18} color="#EF4444" style={{ marginRight: 6 }} />
-                    <Text numberOfLines={1} style={styles.peakDayText}>
-                      {analysisData.peak_risk_day || 'Tidak ada'}
-                    </Text>
-                  </View>
-                  <Text style={styles.peakDaySubtext}>
-                    Kurangi mobilitas di luar ruangan
-                  </Text>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* 2. HORIZONTAL CALENDAR / DAY CAROUSEL (7 Days) */}
-          <View style={[styles.sectionHeader, { marginTop: 18 }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Ionicons name="calendar-outline" size={18} color="#0284C7" style={{ marginRight: 6 }} />
-              <Text style={styles.sectionTitle}>Pilih Hari Prakiraan</Text>
-            </View>
-            <Text style={styles.sectionSubtitle}>Ketuk untuk rincian harian</Text>
-          </View>
-
-          {isLoading && !analysisData ? (
-            <View style={styles.loadingCarouselWrapper}>
-              <ActivityIndicator size="small" color="#0284C7" />
-              <Text style={styles.loadingText}>Menyiapkan kalender prakiraan 7 hari...</Text>
-            </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.forecastScrollContent}
-            >
-              {analysisData?.daily_forecast?.map((item, index) => {
-                const isSelected = index === selectedDayIndex;
-                const impactCol = getImpactColor(item.impact_level);
-
-                return (
-                  <Pressable
-                    key={item.date || index}
-                    onPress={() => setSelectedDayIndex(index)}
-                    style={[
-                      styles.forecastCard,
-                      isSelected && styles.forecastCardActive,
-                    ]}
-                  >
                     <Text
                       style={[
-                        styles.forecastDay,
-                        isSelected && styles.forecastDayActive,
+                        styles.overallBadgeText,
+                        {
+                          color: getImpactColor(analysisData.overall_weekly_status),
+                        },
                       ]}
                     >
-                      {item.day_name}
+                      {analysisData.overall_weekly_status}
                     </Text>
+                  </View>
+                </View>
 
-                    <Text style={styles.forecastDateText}>
-                      {item.date ? item.date.slice(5) : ''}
-                    </Text>
-
-                    <View style={styles.forecastIconWrapper}>
-                      {getWeatherIcon(item)}
+                {/* Metrics Row: Average Risk Score & Peak Risk Day */}
+                <View style={styles.weeklyMetricsRow}>
+                  {/* Average Risk Score */}
+                  <View style={styles.metricBlock}>
+                    <Text style={styles.metricBlockLabel}>Rata-rata Risiko</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+                      <Text style={styles.metricBlockValue}>
+                        {analysisData.average_risk_score.toFixed(1)}
+                      </Text>
+                      <Text style={styles.metricBlockUnit}>/100</Text>
                     </View>
+                    <View style={styles.progressBarTrack}>
+                      <View
+                        style={[
+                          styles.progressBarFill,
+                          {
+                            width: `${Math.min(
+                              100,
+                              Math.max(0, analysisData.average_risk_score)
+                            )}%`,
+                            backgroundColor: getImpactColor(
+                              analysisData.overall_weekly_status
+                            ),
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
 
-                    {/* Risk Score Pill */}
-                    <View
-                      style={[
-                        styles.forecastScorePill,
-                        { backgroundColor: impactCol },
-                      ]}
-                    >
-                      <Text style={styles.forecastScorePillText}>
-                        {Math.round(item.health_risk_score)}
+                  <View style={styles.metricDivider} />
+
+                  {/* Peak Risk Day */}
+                  <View style={styles.metricBlock}>
+                    <Text style={styles.metricBlockLabel}>Hari Paling Rawan</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                      <Ionicons name="warning" size={18} color="#EF4444" style={{ marginRight: 6 }} />
+                      <Text numberOfLines={1} style={styles.peakDayText}>
+                        {analysisData.peak_risk_day || 'Tidak ada'}
                       </Text>
                     </View>
+                    <Text style={styles.peakDaySubtext}>
+                      Kurangi mobilitas di luar ruangan
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
 
-                    {/* Status Text */}
-                    <Text
+            {/* 1.5. KARTU ANALISIS AI DAMPAK POLUSI 1-KLIK KE TUBUH */}
+            <Pressable
+              style={styles.aiImpactCard}
+              onPress={handleNavigateToAiImpact}
+              android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
+            >
+              <LinearGradient
+                colors={['#1E6CEF', '#0284C7']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.aiImpactGradient}
+              >
+                <View style={styles.aiImpactTopRow}>
+                  <View style={styles.aiBadgePill}>
+                    <Ionicons name="sparkles" size={13} color="#FACC15" style={{ marginRight: 5 }} />
+                    <Text style={styles.aiBadgeText}>AURA AI HEALTH ENGINE</Text>
+                  </View>
+                  <View style={styles.aiClickPill}>
+                    <Text style={styles.aiClickPillText}>1-Click Analisis</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.aiImpactTitle}>
+                  Analisis Dampak Polusi ke Tubuh (1 Minggu)
+                </Text>
+                <Text style={styles.aiImpactDesc}>
+                  Model AI memprediksi langsung dampak akumulasi polusi terhadap Level Oksigen, Suhu Tubuh, Kondisi Kulit, dan Risiko Dehidrasi.
+                </Text>
+
+                <View style={styles.aiImpactActionRow}>
+                  <Text style={styles.aiImpactActionText}>Mulai Analisis AI Sekarang</Text>
+                  <View style={styles.aiImpactActionCircle}>
+                    <Ionicons name="arrow-forward" size={16} color="#1E6CEF" />
+                  </View>
+                </View>
+              </LinearGradient>
+            </Pressable>
+
+            {/* 2. HORIZONTAL CALENDAR / DAY CAROUSEL (7 Days) */}
+            <View style={[styles.sectionHeader, { marginTop: 18 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons name="calendar-outline" size={18} color="#0284C7" style={{ marginRight: 6 }} />
+                <Text style={styles.sectionTitle}>Pilih Hari Prakiraan</Text>
+              </View>
+              <Text style={styles.sectionSubtitle}>Ketuk untuk rincian harian</Text>
+            </View>
+
+            {isLoading && !analysisData ? (
+              <View style={styles.loadingCarouselWrapper}>
+                <ActivityIndicator size="small" color="#0284C7" />
+                <Text style={styles.loadingText}>Menyiapkan kalender prakiraan 7 hari...</Text>
+              </View>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.forecastScrollContent}
+              >
+                {analysisData?.daily_forecast?.map((item, index) => {
+                  const isSelected = index === selectedDayIndex;
+                  const impactCol = getImpactColor(item.impact_level);
+
+                  return (
+                    <Pressable
+                      key={item.date || index}
+                      onPress={() => setSelectedDayIndex(index)}
                       style={[
-                        styles.forecastStatusSmall,
-                        { color: impactCol },
+                        styles.forecastCard,
+                        isSelected && styles.forecastCardActive,
                       ]}
                     >
-                      {item.impact_level}
+                      <Text
+                        style={[
+                          styles.forecastDay,
+                          isSelected && styles.forecastDayActive,
+                        ]}
+                      >
+                        {item.day_name}
+                      </Text>
+
+                      <Text style={styles.forecastDateText}>
+                        {item.date ? item.date.slice(5) : ''}
+                      </Text>
+
+                      <View style={styles.forecastIconWrapper}>
+                        {getWeatherIcon(item)}
+                      </View>
+
+                      {/* Risk Score Pill */}
+                      <View
+                        style={[
+                          styles.forecastScorePill,
+                          { backgroundColor: impactCol },
+                        ]}
+                      >
+                        <Text style={styles.forecastScorePillText}>
+                          {Math.round(item.health_risk_score)}
+                        </Text>
+                      </View>
+
+                      {/* Status Text */}
+                      <Text
+                        style={[
+                          styles.forecastStatusSmall,
+                          { color: impactCol },
+                        ]}
+                      >
+                        {item.impact_level}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            {/* 3. RINCIAN HARI TERPILIH (Selected Day Details) */}
+            {selectedDay && (
+              <>
+                <View style={[styles.sectionHeader, { marginTop: 22 }]}>
+                  <View>
+                    <Text style={styles.sectionTitle}>
+                      Detail {selectedDay.day_name} ({selectedDay.date})
                     </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          )}
-
-          {/* 3. RINCIAN HARI TERPILIH (Selected Day Details) */}
-          {selectedDay && (
-            <>
-              <View style={[styles.sectionHeader, { marginTop: 22 }]}>
-                <View>
-                  <Text style={styles.sectionTitle}>
-                    Detail {selectedDay.day_name} ({selectedDay.date})
-                  </Text>
-                  <Text style={styles.sectionSubtitle}>
-                    {selectedDay.summary}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Traffic Severity & Congestion Banner */}
-              <View style={styles.trafficBannerCard}>
-                <View style={styles.trafficBannerLeft}>
-                  <Ionicons name="car-outline" size={22} color="#0284C7" />
-                  <View style={{ marginLeft: 10 }}>
-                    <Text style={styles.trafficBannerTitle}>Tingkat Kemacetan</Text>
-                    <Text style={styles.trafficBannerSub}>
-                      Indeks Beban: {Math.round(selectedDay.traffic_congestion_idx)}%
+                    <Text style={styles.sectionSubtitle}>
+                      {selectedDay.summary}
                     </Text>
                   </View>
                 </View>
-                <View
-                  style={[
-                    styles.trafficBadge,
-                    {
-                      backgroundColor: getTrafficSeverityColor(
-                        selectedDay.traffic_severity
-                      ),
-                    },
-                  ]}
+
+                {/* Traffic Severity & Congestion Banner */}
+                <View style={styles.trafficBannerCard}>
+                  <View style={styles.trafficBannerLeft}>
+                    <Ionicons name="car-outline" size={22} color="#0284C7" />
+                    <View style={{ marginLeft: 10 }}>
+                      <Text style={styles.trafficBannerTitle}>Tingkat Kemacetan</Text>
+                      <Text style={styles.trafficBannerSub}>
+                        Indeks Beban: {Math.round(selectedDay.traffic_congestion_idx)}%
+                      </Text>
+                    </View>
+                  </View>
+                  <View
+                    style={[
+                      styles.trafficBadge,
+                      {
+                        backgroundColor: getTrafficSeverityColor(
+                          selectedDay.traffic_severity
+                        ),
+                      },
+                    ]}
+                  >
+                    <Text style={styles.trafficBadgeText}>
+                      {selectedDay.traffic_severity}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* 2x4 Environmental & Weather Metrics Grid */}
+                <View style={styles.gridContainer}>
+                  {/* PM2.5 */}
+                  <View style={styles.observationCard}>
+                    <Image
+                      source={require('@/assets/indexmap/Ellipse 321.png')}
+                      style={styles.observationIcon}
+                      contentFit="contain"
+                    />
+                    <View style={styles.observationTextCol}>
+                      <Text style={styles.observationLabel}>PM2.5</Text>
+                      <Text style={styles.observationValue}>
+                        {selectedDay.predicted_pm2_5.toFixed(1)} µg/m³
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* PM10 */}
+                  <View style={styles.observationCard}>
+                    <Image
+                      source={require('@/assets/indexmap/Ellipse 321.png')}
+                      style={styles.observationIcon}
+                      contentFit="contain"
+                    />
+                    <View style={styles.observationTextCol}>
+                      <Text style={styles.observationLabel}>PM10</Text>
+                      <Text style={styles.observationValue}>
+                        {selectedDay.predicted_pm10.toFixed(1)} µg/m³
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Carbon Monoxide (CO) */}
+                  <View style={styles.observationCard}>
+                    <Image
+                      source={require('@/assets/indexmap/Ellipse 321-1.png')}
+                      style={styles.observationIcon}
+                      contentFit="contain"
+                    />
+                    <View style={styles.observationTextCol}>
+                      <Text style={styles.observationLabel}>CO (Karbon)</Text>
+                      <Text style={styles.observationValue}>
+                        {Math.round(selectedDay.predicted_co)} µg/m³
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Kecepatan Angin */}
+                  <View style={styles.observationCard}>
+                    <Image
+                      source={require('@/assets/indexmap/Ellipse 321-2.png')}
+                      style={styles.observationIcon}
+                      contentFit="contain"
+                    />
+                    <View style={styles.observationTextCol}>
+                      <Text style={styles.observationLabel}>Angin</Text>
+                      <Text style={styles.observationValue}>
+                        {selectedDay.wind_speed_kmh.toFixed(1)} km/h
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Arah Angin */}
+                  <View style={styles.observationCard}>
+                    <View style={[styles.observationIcon, styles.iconFallback]}>
+                      <Ionicons name="compass-outline" size={22} color="#0284C7" />
+                    </View>
+                    <View style={styles.observationTextCol}>
+                      <Text style={styles.observationLabel}>Arah Angin</Text>
+                      <Text style={styles.observationValue}>
+                        {selectedDay.wind_direction_compass || 'Utara'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Kelembapan */}
+                  <View style={styles.observationCard}>
+                    <Image
+                      source={require('@/assets/indexmap/Ellipse 321-3.png')}
+                      style={styles.observationIcon}
+                      contentFit="contain"
+                    />
+                    <View style={styles.observationTextCol}>
+                      <Text style={styles.observationLabel}>Kelembapan</Text>
+                      <Text style={styles.observationValue}>
+                        {Math.round(selectedDay.humidity_percent)}%
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Curah Hujan */}
+                  <View style={styles.observationCard}>
+                    <View style={[styles.observationIcon, styles.iconFallback]}>
+                      <Ionicons name="rainy-outline" size={22} color="#0284C7" />
+                    </View>
+                    <View style={styles.observationTextCol}>
+                      <Text style={styles.observationLabel}>Curah Hujan</Text>
+                      <Text style={styles.observationValue}>
+                        {selectedDay.precipitation_mm.toFixed(1)} mm
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Kondisi Dispersi */}
+                  <View style={styles.observationCard}>
+                    <View style={[styles.observationIcon, styles.iconFallback]}>
+                      <Ionicons name="leaf-outline" size={22} color="#10B981" />
+                    </View>
+                    <View style={styles.observationTextCol}>
+                      <Text style={styles.observationLabel}>Dispersi</Text>
+                      <Text numberOfLines={1} style={styles.observationValue}>
+                        {selectedDay.dispersion_condition}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Tombol CTA Analisis AI di Bawah */}
+                <Pressable
+                  style={styles.bottomAiCta}
+                  onPress={handleNavigateToAiImpact}
                 >
-                  <Text style={styles.trafficBadgeText}>
-                    {selectedDay.traffic_severity}
-                  </Text>
-                </View>
-              </View>
-
-              {/* 2x4 Environmental & Weather Metrics Grid */}
-              <View style={styles.gridContainer}>
-                {/* PM2.5 */}
-                <View style={styles.observationCard}>
-                  <Image
-                    source={require('@/assets/indexmap/Ellipse 321.png')}
-                    style={styles.observationIcon}
-                    contentFit="contain"
-                  />
-                  <View style={styles.observationTextCol}>
-                    <Text style={styles.observationLabel}>PM2.5</Text>
-                    <Text style={styles.observationValue}>
-                      {selectedDay.predicted_pm2_5.toFixed(1)} µg/m³
+                  <LinearGradient
+                    colors={['#1E6CEF', '#0284C7']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.bottomAiCtaGradient}
+                  >
+                    <Ionicons name="sparkles" size={18} color="#FACC15" style={{ marginRight: 8 }} />
+                    <Text style={styles.bottomAiCtaText}>
+                      Buka Hasil Analisis Dampak Polusi AI Lengkap
                     </Text>
-                  </View>
-                </View>
+                    <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={{ marginLeft: 6 }} />
+                  </LinearGradient>
+                </Pressable>
+              </>
+            )}
 
-                {/* PM10 */}
-                <View style={styles.observationCard}>
-                  <Image
-                    source={require('@/assets/indexmap/Ellipse 321.png')}
-                    style={styles.observationIcon}
-                    contentFit="contain"
-                  />
-                  <View style={styles.observationTextCol}>
-                    <Text style={styles.observationLabel}>PM10</Text>
-                    <Text style={styles.observationValue}>
-                      {selectedDay.predicted_pm10.toFixed(1)} µg/m³
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Carbon Monoxide (CO) */}
-                <View style={styles.observationCard}>
-                  <Image
-                    source={require('@/assets/indexmap/Ellipse 321-1.png')}
-                    style={styles.observationIcon}
-                    contentFit="contain"
-                  />
-                  <View style={styles.observationTextCol}>
-                    <Text style={styles.observationLabel}>CO (Karbon)</Text>
-                    <Text style={styles.observationValue}>
-                      {Math.round(selectedDay.predicted_co)} µg/m³
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Kecepatan Angin */}
-                <View style={styles.observationCard}>
-                  <Image
-                    source={require('@/assets/indexmap/Ellipse 321-2.png')}
-                    style={styles.observationIcon}
-                    contentFit="contain"
-                  />
-                  <View style={styles.observationTextCol}>
-                    <Text style={styles.observationLabel}>Angin</Text>
-                    <Text style={styles.observationValue}>
-                      {selectedDay.wind_speed_kmh.toFixed(1)} km/h
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Arah Angin */}
-                <View style={styles.observationCard}>
-                  <View style={[styles.observationIcon, styles.iconFallback]}>
-                    <Ionicons name="compass-outline" size={22} color="#0284C7" />
-                  </View>
-                  <View style={styles.observationTextCol}>
-                    <Text style={styles.observationLabel}>Arah Angin</Text>
-                    <Text style={styles.observationValue}>
-                      {selectedDay.wind_direction_compass || 'Utara'}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Kelembapan */}
-                <View style={styles.observationCard}>
-                  <Image
-                    source={require('@/assets/indexmap/Ellipse 321-3.png')}
-                    style={styles.observationIcon}
-                    contentFit="contain"
-                  />
-                  <View style={styles.observationTextCol}>
-                    <Text style={styles.observationLabel}>Kelembapan</Text>
-                    <Text style={styles.observationValue}>
-                      {Math.round(selectedDay.humidity_percent)}%
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Curah Hujan */}
-                <View style={styles.observationCard}>
-                  <View style={[styles.observationIcon, styles.iconFallback]}>
-                    <Ionicons name="rainy-outline" size={22} color="#0284C7" />
-                  </View>
-                  <View style={styles.observationTextCol}>
-                    <Text style={styles.observationLabel}>Curah Hujan</Text>
-                    <Text style={styles.observationValue}>
-                      {selectedDay.precipitation_mm.toFixed(1)} mm
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Kondisi Dispersi */}
-                <View style={styles.observationCard}>
-                  <View style={[styles.observationIcon, styles.iconFallback]}>
-                    <Ionicons name="leaf-outline" size={22} color="#10B981" />
-                  </View>
-                  <View style={styles.observationTextCol}>
-                    <Text style={styles.observationLabel}>Dispersi</Text>
-                    <Text numberOfLines={1} style={styles.observationValue}>
-                      {selectedDay.dispersion_condition}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </>
-          )}
-
-          {/* Bottom Spacing */}
-          <View style={{ height: insets.bottom + 40 }} />
+            {/* Bottom Spacing */}
+            <View style={{ height: insets.bottom + 40 }} />
         </LinearGradient>
       </ScrollView>
 
@@ -1464,6 +1120,16 @@ export default function PollutionImpactScreen() {
           </View>
         </Pressable>
       </Modal>
+
+      {/* Fullscreen Page Transition & API Loading Splash */}
+      <PageTransitionSplash
+        visible={isLoading || isNavigatingToAi}
+        message={
+          isNavigatingToAi
+            ? 'Menghubungkan ke Model AI Pulmonologi...'
+            : 'Menghubungkan sensor cuaca & analisis polusi...'
+        }
+      />
     </View>
   );
 }
@@ -1509,6 +1175,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 5,
     elevation: 4,
+  },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  aiHeaderBtn: {
+    backgroundColor: '#1E6CEF',
   },
   headerLocationButton: {
     flexDirection: 'row',
@@ -1631,6 +1305,109 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
     marginBottom: 16,
+  },
+  aiImpactCard: {
+    borderRadius: 20,
+    marginBottom: 16,
+    overflow: 'hidden',
+    shadowColor: '#1E6CEF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  aiImpactGradient: {
+    padding: 18,
+    borderRadius: 20,
+  },
+  aiImpactTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  aiBadgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+  },
+  aiBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.4,
+  },
+  aiClickPill: {
+    backgroundColor: '#FACC15',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  aiClickPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  aiImpactTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    lineHeight: 22,
+    marginBottom: 6,
+  },
+  aiImpactDesc: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.88)',
+    lineHeight: 17,
+    marginBottom: 14,
+  },
+  aiImpactActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+  },
+  aiImpactActionText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  aiImpactActionCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bottomAiCta: {
+    marginTop: 18,
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#1E6CEF',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  bottomAiCtaGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  bottomAiCtaText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    flex: 1,
   },
   weeklySummaryHeader: {
     flexDirection: 'row',

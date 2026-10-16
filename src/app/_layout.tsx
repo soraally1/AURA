@@ -108,6 +108,13 @@ export default function RootLayout() {
               />
               <Stack.Screen name="dashboard" />
               <Stack.Screen name="pollution-impact" />
+              <Stack.Screen
+                name="ai-pollution-impact"
+                options={{
+                  animation: 'slide_from_right',
+                  animationDuration: 300,
+                }}
+              />
               <Stack.Screen name="explore" />
               <Stack.Screen
                 name="lung-check"
@@ -123,7 +130,28 @@ export default function RootLayout() {
                   animationDuration: 350,
                 }}
               />
+              <Stack.Screen
+                name="skin-result"
+                options={{
+                  animation: 'slide_from_right',
+                  animationDuration: 300,
+                }}
+              />
+              <Stack.Screen
+                name="lung-result"
+                options={{
+                  animation: 'slide_from_right',
+                  animationDuration: 300,
+                }}
+              />
               <Stack.Screen name="ceksekarang" />
+              <Stack.Screen
+                name="kebutuhan-harian"
+                options={{
+                  animation: 'slide_from_right',
+                  animationDuration: 300,
+                }}
+              />
               <Stack.Screen name="doctor-reservation" />
               <Stack.Screen name="hospital-detail" />
               <Stack.Screen name="hospital-route" />

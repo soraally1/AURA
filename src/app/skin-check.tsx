@@ -30,6 +30,7 @@ import { aiService } from '@/services/aiService';
 import { SkinScanData, ScanSkinContext } from '@/types/ai';
 import { useAuth } from '@/context/auth-context';
 import { backgroundMobilityTracker } from '@/services/backgroundMobilityTracker';
+import { skinHistoryService } from '@/services/skinHistoryService';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const TARGET_SIZE = Math.min(SCREEN_WIDTH * 0.78, 300);
@@ -296,8 +297,14 @@ export default function SkinCheckScreen() {
 
       const res = await aiService.scanSkin(base64 || uri, context);
       if (res && res.data) {
-        setSkinResult(res.data);
-        setState('result');
+        // Simpan hasil ke riwayat lokal & buka dedicated page hasil analisis
+        const saved = await skinHistoryService.saveScan(res.data, uri);
+        setState('idle');
+        setPhotoUri(null);
+        router.push({
+          pathname: '/skin-result',
+          params: { id: saved.id },
+        });
         return;
       }
       throw new Error('Format respon analisis kulit tidak valid.');
@@ -305,7 +312,7 @@ export default function SkinCheckScreen() {
       console.error('[SkinScan] Scan API error:', err);
       setErrorMessage(
         err?.message ||
-          'Tidak dapat terhubung ke server AI kulit Groq/SCIN di http://localhost:8000. Pastikan server onnxaura sudah berjalan.'
+          'Tidak dapat terhubung ke server AI kulit Groq/SCIN. Pastikan koneksi internet stabil.'
       );
       setState('error');
     }
@@ -437,10 +444,17 @@ export default function SkinCheckScreen() {
           </View>
         </View>
 
-        {/* Camera Controls (Flip / Flash) */}
+        {/* Camera Controls (Flip / Flash / History) */}
         <View style={styles.cameraControlsRow}>
           {permission?.granted && state === 'idle' ? (
             <>
+              <Pressable
+                style={styles.circleBtnSmall}
+                onPress={() => router.push('/skin-result')}
+                accessibilityLabel="Riwayat Analisis Kulit"
+              >
+                <Ionicons name="time-outline" size={18} color="white" />
+              </Pressable>
               <Pressable style={styles.circleBtnSmall} onPress={toggleFlash}>
                 <Ionicons
                   name={flash === 'on' ? 'flash' : 'flash-off'}
@@ -453,7 +467,13 @@ export default function SkinCheckScreen() {
               </Pressable>
             </>
           ) : (
-            <View style={{ width: 40 }} />
+            <Pressable
+              style={styles.circleBtnSmall}
+              onPress={() => router.push('/skin-result')}
+              accessibilityLabel="Riwayat Analisis Kulit"
+            >
+              <Ionicons name="time-outline" size={18} color="white" />
+            </Pressable>
           )}
         </View>
       </View>

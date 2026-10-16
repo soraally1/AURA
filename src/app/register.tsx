@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,10 +17,12 @@ import { SocialDivider } from '@/components/auth/SocialDivider';
 import { AnimatedAuthHeader, AnimatedAuthBody } from '@/components/auth/AuthTransition';
 import { useAuth } from '@/context/auth-context';
 import { getErrorMessage } from '@/utils/error-mapper';
+import { isProfileComplete } from '@/types/auth';
+import { PageTransitionSplash } from '@/components/splash/CityBuildingSplash';
 
 export default function RegisterScreen() {
   const router = useRouter();
-  const { register } = useAuth();
+  const { register, isAuthenticated, user, isLoading: isAuthLoading } = useAuth();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -34,6 +36,28 @@ export default function RegisterScreen() {
     password?: string;
     confirmPassword?: string;
   }>({});
+
+  // Auto-redirect jika user sudah login / memiliki sesi aktif
+  useEffect(() => {
+    if (!isAuthLoading && isAuthenticated && user) {
+      if (isProfileComplete(user)) {
+        router.replace('/dashboard');
+      } else {
+        router.replace('/complete-profile');
+      }
+    }
+  }, [isAuthLoading, isAuthenticated, user, router]);
+
+  if (isAuthLoading || (isAuthenticated && user)) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <PageTransitionSplash
+          visible={true}
+          message="Menyambungkan sesi aktif..."
+        />
+      </View>
+    );
+  }
 
   const validate = () => {
     const newErrors: {

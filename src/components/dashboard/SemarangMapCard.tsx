@@ -1,7 +1,10 @@
 import React, { useMemo } from 'react';
-import { View, Text, Pressable, Dimensions, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, Dimensions, StyleSheet, ActivityIndicator, Platform, StatusBar } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NearbyZoneResult, ImpactLevel } from '@/types/zones';
 
 export interface UserLocationProp {
@@ -14,15 +17,29 @@ export interface UserLocationProp {
 interface SemarangMapCardProps {
   onSearchPress?: () => void;
   onMapPress?: () => void;
+  onBannerPress?: () => void;
   onProfilePress?: () => void;
   userLocation?: UserLocationProp;
   nearbyZones?: NearbyZoneResult[];
   isLoading?: boolean;
+  userName?: string;
+  outdoorMinutes?: number;
+  waktuDiJalan?: number;
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const MAP_CONTAINER_WIDTH = SCREEN_WIDTH - 32;
-const MAP_HEIGHT = 252;
+
+// ─── Cartoon Cloud SVG Component (Matches User Mockup) ───────────────────────
+function CartoonCloud({ width = 52, height = 30 }: { width?: number; height?: number }) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 52 30" fill="none">
+      <Path
+        d="M13 30C5.82 30 0 24.18 0 17C0 10.37 4.96 4.9 11.43 4.1C13.41 1.62 16.44 0 19.8 0C25.07 0 29.47 3.75 30.45 8.85C31.75 8.3 33.18 8 34.7 8C39.67 8 43.7 12.03 43.7 17C43.7 17.38 43.68 17.75 43.62 18.11C46.68 19.26 48.88 22.25 48.88 25.75C48.88 29.75 45.63 30 42 30H13Z"
+        fill="#FFFFFF"
+      />
+    </Svg>
+  );
+}
 
 function getMarkerColor(level: ImpactLevel): string {
   switch (level) {
@@ -53,17 +70,25 @@ function getMarkerGlow(level: ImpactLevel): string {
 export const SemarangMapCard: React.FC<SemarangMapCardProps> = ({
   onSearchPress,
   onMapPress,
+  onBannerPress,
   onProfilePress,
   userLocation,
   nearbyZones = [],
   isLoading = false,
+  userName = 'FREYA JAWANTARA',
+  outdoorMinutes,
+  waktuDiJalan = 2,
 }) => {
+  const insets = useSafeAreaInsets();
   const handleOpenMap = onMapPress || onSearchPress;
 
   const lat = userLocation?.lat ?? -6.9932;
   const lon = userLocation?.lon ?? 110.4203;
 
-  // MapLibre GL 3D GIS HTML Template with air quality radar halos
+  const topBarTop = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 14) + 6;
+  const cardHeight = 356 + (insets.top > 0 ? insets.top : 16);
+
+  // MapLibre GL 3D GIS HTML Template with custom markers matching Semarang street geometry
   const mapHtml = useMemo(() => {
     const zonesData = (nearbyZones.length > 0 ? nearbyZones : []).map((nz) => ({
       lat: nz.zone.latitude,
@@ -87,10 +112,56 @@ export const SemarangMapCard: React.FC<SemarangMapCardProps> = ({
     body, html, #map { width: 100%; height: 100%; overflow: hidden; background: #E2E8F0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-attrib { display: none !important; }
 
+    /* Custom Red Location Pin */
+    .custom-red-pin {
+      width: 28px;
+      height: 36px;
+      position: relative;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: transform 0.2s ease;
+    }
+    .custom-red-pin:hover {
+      transform: scale(1.15);
+    }
+    .pin-head {
+      width: 24px;
+      height: 24px;
+      background: #EF4444;
+      border: 2px solid #FFFFFF;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .pin-inner-circle {
+      width: 8px;
+      height: 8px;
+      background: #FFFFFF;
+      border-radius: 50%;
+    }
+    .pin-label {
+      position: absolute;
+      top: 28px;
+      background: rgba(15, 23, 42, 0.85);
+      color: #FFFFFF;
+      font-size: 8px;
+      font-weight: 700;
+      padding: 2px 5px;
+      border-radius: 4px;
+      white-space: nowrap;
+      pointer-events: none;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    }
+
     /* User Realtime Radar Pulse */
     .user-radar-container {
-      width: 48px;
-      height: 48px;
+      width: 44px;
+      height: 44px;
       position: relative;
       display: flex;
       align-items: center;
@@ -98,76 +169,36 @@ export const SemarangMapCard: React.FC<SemarangMapCardProps> = ({
     }
     .user-radar-wave {
       position: absolute;
-      width: 48px;
-      height: 48px;
-      background: rgba(30, 108, 239, 0.22);
+      width: 100%;
+      height: 100%;
       border-radius: 50%;
-      animation: radarWave 2.2s infinite ease-out;
-    }
-    @keyframes radarWave {
-      0% { transform: scale(0.6); opacity: 0.9; }
-      100% { transform: scale(1.4); opacity: 0; }
+      background: rgba(30, 108, 239, 0.28);
+      animation: radarPing 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
     }
     .user-radar-core {
       width: 14px;
       height: 14px;
-      background: #1E6CEF;
-      border: 3px solid #FFFFFF;
       border-radius: 50%;
-      box-shadow: 0 2px 8px rgba(30, 108, 239, 0.6);
+      background: #1E6CEF;
+      border: 2.5px solid #FFFFFF;
+      box-shadow: 0 2px 6px rgba(30, 108, 239, 0.5);
       z-index: 2;
     }
 
-    /* Hotspot Aura Halo Pin */
-    .hotspot-wrapper {
-      position: relative;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      cursor: pointer;
-    }
-    .hotspot-halo {
-      position: absolute;
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      top: -3px;
-      animation: haloPulse 2s infinite ease-in-out;
-    }
-    @keyframes haloPulse {
-      0%, 100% { transform: scale(0.95); opacity: 0.6; }
-      50% { transform: scale(1.25); opacity: 0.2; }
-    }
-    .hotspot-core {
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      border: 2.5px solid #FFFFFF;
-      box-shadow: 0 3px 8px rgba(0,0,0,0.28);
-      z-index: 2;
-    }
-    .hotspot-label {
-      background: #FFFFFF;
-      border-radius: 999px;
-      padding: 3px 8px;
-      font-size: 10px;
-      font-weight: 800;
-      color: #1E293B;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.18);
-      white-space: nowrap;
-      margin-top: 4px;
-      border: 1px solid rgba(0,0,0,0.06);
+    @keyframes radarPing {
+      0% { transform: scale(0.4); opacity: 0.9; }
+      75%, 100% { transform: scale(1.4); opacity: 0; }
     }
   </style>
 </head>
 <body>
   <div id="map"></div>
+
   <script>
     var lat = ${lat};
     var lon = ${lon};
     var zones = ${JSON.stringify(zonesData)};
 
-    // Initialize MapLibre GL with 3D Perspective Pitch
     var map = new maplibregl.Map({
       container: 'map',
       style: {
@@ -193,9 +224,9 @@ export const SemarangMapCard: React.FC<SemarangMapCardProps> = ({
         ]
       },
       center: [lon, lat],
-      zoom: 13.8,
-      pitch: 36, // 3D Perspective Tilt for modern GIS aesthetic
-      bearing: -10, // Subtle angle for natural street alignment
+      zoom: 13.4,
+      pitch: 28,
+      bearing: -5,
       interactive: false,
       attributionControl: false
     });
@@ -209,36 +240,23 @@ export const SemarangMapCard: React.FC<SemarangMapCardProps> = ({
         .setLngLat([lon, lat])
         .addTo(map);
 
-      // 2. Air Quality Hotspots with Glowing Halos
-      if (zones && zones.length > 0) {
-        zones.forEach(function(z) {
-          var el = document.createElement('div');
-          el.className = 'hotspot-wrapper';
-          el.innerHTML = '<div class="hotspot-halo" style="background: ' + z.glow + '"></div>' +
-                         '<div class="hotspot-core" style="background: ' + z.color + '"></div>' +
-                         '<div class="hotspot-label">' + z.name + '</div>';
-          new maplibregl.Marker({ element: el })
-            .setLngLat([z.lon, z.lat])
-            .addTo(map);
-        });
-      } else {
-        // Fallback default Semarang zones if backend query is empty
-        var defaults = [
-          { name: 'Simpang Lima', lon: 110.4227, lat: -6.9904, color: '#F59E0B', glow: 'rgba(245, 158, 11, 0.35)' },
-          { name: 'Tugu Muda', lon: 110.4087, lat: -6.9842, color: '#10B981', glow: 'rgba(16, 185, 129, 0.35)' },
-          { name: 'Pelabuhan Tanjung Emas', lon: 110.4182, lat: -6.9535, color: '#EF4444', glow: 'rgba(239, 68, 68, 0.35)' }
-        ];
-        defaults.forEach(function(d) {
-          var el = document.createElement('div');
-          el.className = 'hotspot-wrapper';
-          el.innerHTML = '<div class="hotspot-halo" style="background: ' + d.glow + '"></div>' +
-                         '<div class="hotspot-core" style="background: ' + d.color + '"></div>' +
-                         '<div class="hotspot-label">' + d.name + '</div>';
-          new maplibregl.Marker({ element: el })
-            .setLngLat([d.lon, d.lat])
-            .addTo(map);
-        });
-      }
+      // 2. Semarang Iconic Landmarks (Sam Poo Kong, Stadion Jatidiri, Djomblang)
+      var landmarks = [
+        { name: 'SAM POO KONG', lon: 110.3985, lat: -6.9965 },
+        { name: 'Masjid Agung Jawa Tengah (MAJT)', lon: 110.4455, lat: -6.9839 },
+        { name: 'Stadion Jatidiri', lon: 110.4074, lat: -7.0210 },
+        { name: 'PERUM SINGATARA', lon: 110.4475, lat: -7.0095 },
+        { name: 'Simpang Lima', lon: 110.4227, lat: -6.9904 }
+      ];
+
+      landmarks.forEach(function(lm) {
+        var el = document.createElement('div');
+        el.className = 'custom-red-pin';
+        el.innerHTML = '<div class="pin-head"><div class="pin-inner-circle"></div></div><div class="pin-label">' + lm.name + '</div>';
+        new maplibregl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat([lm.lon, lm.lat])
+          .addTo(map);
+      });
     });
   </script>
 </body>
@@ -246,9 +264,26 @@ export const SemarangMapCard: React.FC<SemarangMapCardProps> = ({
     `;
   }, [lat, lon, nearbyZones]);
 
+  // Perhitungan Durasi di Luar Ruangan Riil (Hanya dari data aktual pelacakan)
+  const { displayValue, displayUnit } = useMemo(() => {
+    const mins = typeof outdoorMinutes === 'number' ? outdoorMinutes : 0;
+
+    if (mins >= 60) {
+      const hours = mins / 60;
+      const val = Number(hours.toFixed(1)).toString().replace(/\.0$/, '');
+      return { displayValue: val, displayUnit: 'jam' };
+    }
+
+    if (mins > 0) {
+      return { displayValue: Math.round(mins).toString(), displayUnit: 'menit' };
+    }
+
+    return { displayValue: '0', displayUnit: 'menit' };
+  }, [outdoorMinutes]);
+
   return (
-    <View style={styles.container}>
-      {/* 3D GIS MAPLIBRE GL EMBED */}
+    <View style={[styles.container, { height: cardHeight }]}>
+      {/* 1. 3D GIS MAP VIEW EMBED */}
       <WebView
         originWhitelist={['*']}
         source={{ html: mapHtml }}
@@ -261,80 +296,104 @@ export const SemarangMapCard: React.FC<SemarangMapCardProps> = ({
         pointerEvents="none"
       />
 
-      {/* TOP FLOATING SEARCH BAR WITH LOCATION & PROFILE AVATAR */}
-      <View style={styles.topSearchBarOverlay}>
-        <Pressable style={styles.searchBarBox} onPress={handleOpenMap}>
-          <View style={styles.searchLocationIconCircle}>
-            <Ionicons name="location" size={16} color="#1E6CEF" />
-          </View>
-          <View style={styles.searchTextWrapper}>
-            <Text numberOfLines={1} style={styles.searchLocationTitle}>
-              {userLocation?.name || 'Semarang, Jawa Tengah'}
-            </Text>
-            <Text style={styles.searchPromptSub}>
-              Ketuk untuk telusuri radar kualitas udara
-            </Text>
-          </View>
-
-          {isLoading ? (
-            <ActivityIndicator size="small" color="#1E6CEF" style={{ marginRight: 6 }} />
-          ) : userLocation?.isRealtime ? (
-            <View style={styles.gpsLivePill}>
-              <View style={styles.gpsLiveDot} />
-              <Text style={styles.gpsLiveText}>GPS</Text>
-            </View>
-          ) : null}
-        </Pressable>
-      </View>
-
-      {/* BOTTOM INFO CHIP & FULLSCREEN EXPAND BUTTON */}
-      <View style={styles.bottomBarOverlay} pointerEvents="box-none">
-        {/* 3D GIS Radar Chip */}
-        <View style={styles.gisRadarChip}>
-          <View style={styles.radarStatusDot} />
-          <Text style={styles.gisRadarChipText}>
-            3D GIS • {nearbyZones.length > 0 ? `${nearbyZones.length} Titik Sensor` : 'Radar Polusi Aktif'}
-          </Text>
-        </View>
-
-        {/* Expand Fullscreen Button */}
+      {/* 2. TOP FLOATING SEARCH BAR: "Temukan lokasi anda..." */}
+      <View style={[styles.topSearchBarOverlay, { top: topBarTop }]}>
         <Pressable
-          style={styles.expandButton}
+          style={styles.searchBarBox}
           onPress={handleOpenMap}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityRole="button"
-          accessibilityLabel="Buka Peta Layar Penuh"
+          accessibilityLabel="Temukan lokasi anda"
         >
-          <Ionicons name="expand" size={15} color="#FFFFFF" />
+          <Ionicons name="search" size={21} color="#2563EB" style={{ marginRight: 10 }} />
+          <Text style={styles.searchPlaceholderText}>Temukan lokasi anda...</Text>
+          {isLoading && (
+            <ActivityIndicator size="small" color="#2563EB" style={{ marginLeft: 'auto' }} />
+          )}
         </Pressable>
       </View>
 
-      {/* Transparent Overlay to trigger full map modal */}
+      {/* 3. MIDDLE TAP OVERLAY TO OPEN FULLSCREEN MAP */}
       <Pressable
         onPress={handleOpenMap}
-        style={StyleSheet.absoluteFill}
+        style={[styles.middleMapTapArea, { top: topBarTop + 54 }]}
         accessibilityRole="button"
         accessibilityLabel="Buka Peta Interaktif"
       />
+
+      {/* 4. BOTTOM WELCOME & OUTDOOR DURATION BADGE BAR */}
+      <View style={styles.welcomeBannerOverlay} pointerEvents="box-none">
+        <Pressable
+          style={styles.welcomeBannerPressable}
+          onPress={onBannerPress || handleOpenMap}
+          accessibilityRole="button"
+          accessibilityLabel="Selamat Datang & Durasi Luar Ruangan"
+        >
+          <LinearGradient
+            colors={['#1665F4', '#1E6FEF', '#3888F8']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0.8 }}
+            style={styles.welcomeBannerGradient}
+          >
+            {/* Decorative Cartoon Clouds on Right (Exact layout matching mockup) */}
+            <View style={styles.cloudDecorationContainer} pointerEvents="none">
+              {/* Cloud 1 (Top right) */}
+              <View style={styles.cloud1Position}>
+                <CartoonCloud width={50} height={28} />
+              </View>
+
+              {/* Cloud 2 (Peeking from far right edge) */}
+              <View style={styles.cloud2Position}>
+                <CartoonCloud width={48} height={28} />
+              </View>
+
+              {/* Cloud 3 (Floating in middle) */}
+              <View style={styles.cloud3Position}>
+                <CartoonCloud width={52} height={29} />
+              </View>
+
+              {/* Cloud 4 (Peeking from bottom edge) */}
+              <View style={styles.cloud4Position}>
+                <CartoonCloud width={54} height={30} />
+              </View>
+            </View>
+
+            {/* Left Content Column */}
+            <View style={styles.welcomeLeftContent}>
+              <Text style={styles.welcomeGreetingText}>Halo! Selamat Datang</Text>
+              <Text numberOfLines={1} style={styles.welcomeUserNameText}>
+                {userName ? userName.toUpperCase() : 'FREYA JAWANTARA'}
+              </Text>
+
+              {/* Thin White Divider Line */}
+              <View style={styles.welcomeDividerLine} />
+
+              {/* Duration Row */}
+              <View style={styles.durationRow}>
+                <View>
+                  <Text style={styles.durationItalicText}>Lama Waktu Di</Text>
+                  <Text style={styles.durationItalicText}>Luar Ruangan</Text>
+                </View>
+
+                <View style={styles.durationNumberRow}>
+                  <Text style={[styles.durationBigNumber, displayValue.length > 2 && { fontSize: 26 }]}>
+                    {displayValue}
+                  </Text>
+                  <Text style={styles.durationUnitText}>{displayUnit}</Text>
+                </View>
+              </View>
+            </View>
+          </LinearGradient>
+        </Pressable>
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    width: MAP_CONTAINER_WIDTH,
-    height: MAP_HEIGHT,
-    borderRadius: 26,
+    width: SCREEN_WIDTH,
     overflow: 'hidden',
-    alignSelf: 'center',
     backgroundColor: '#E2E8F0',
-    shadowColor: '#1E293B',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.14,
-    shadowRadius: 12,
-    elevation: 6,
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
     position: 'relative',
   },
   webView: {
@@ -343,126 +402,162 @@ const styles = StyleSheet.create({
     backgroundColor: '#E2E8F0',
   },
 
-  /* TOP SEARCH BAR OVERLAY */
+  /* ─── TOP SEARCH BAR OVERLAY ─── */
   topSearchBarOverlay: {
     position: 'absolute',
-    top: 10,
-    left: 10,
-    right: 10,
-    zIndex: 20,
+    left: 14,
+    right: 14,
+    zIndex: 30,
   },
   searchBarBox: {
-    backgroundColor: 'rgba(255, 255, 255, 0.96)',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 25,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(30, 108, 239, 0.18)',
-    shadowColor: '#1E6CEF',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  searchLocationIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  searchTextWrapper: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  searchLocationTitle: {
-    color: '#0F172A',
-    fontWeight: '800',
-    fontSize: 13,
-    letterSpacing: -0.2,
-  },
-  searchPromptSub: {
-    color: '#64748B',
-    fontWeight: '500',
-    fontSize: 10.5,
-    marginTop: 0.5,
-  },
-  gpsLivePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    marginRight: 4,
-  },
-  gpsLiveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#1E6CEF',
-    marginRight: 4,
-  },
-  gpsLiveText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#1E6CEF',
-  },
-
-  /* BOTTOM OVERLAY CONTROLS */
-  bottomBarOverlay: {
-    position: 'absolute',
-    bottom: 10,
-    left: 12,
-    right: 12,
-    zIndex: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  gisRadarChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.82)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    shadowColor: '#000',
+    borderWidth: 1.8,
+    borderColor: '#3B82F6',
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
-    shadowRadius: 4,
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
     elevation: 3,
   },
-  radarStatusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#10B981',
-    marginRight: 6,
+  searchPlaceholderText: {
+    color: '#2563EB',
+    fontSize: 14.5,
+    fontWeight: '500',
+    letterSpacing: -0.2,
   },
-  gisRadarChipText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.1,
+
+  /* Middle map touch area */
+  middleMapTapArea: {
+    position: 'absolute',
+    bottom: 120,
+    left: 0,
+    right: 0,
+    zIndex: 10,
   },
-  expandButton: {
-    backgroundColor: '#1E6CEF',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+
+  /* ─── BOTTOM WELCOME & OUTDOOR DURATION BANNER OVERLAY ─── */
+  welcomeBannerOverlay: {
+    position: 'absolute',
+    bottom: 12,
+    left: 14,
+    right: 14,
+    zIndex: 30,
+  },
+  welcomeBannerPressable: {
+    borderRadius: 22,
+    overflow: 'hidden',
     shadowColor: '#1E6CEF',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  welcomeBannerGradient: {
+    borderRadius: 22,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    position: 'relative',
+    minHeight: 106,
+    justifyContent: 'center',
+  },
+
+  /* Decorative Clouds Container on Right */
+  cloudDecorationContainer: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: 0,
+    width: 135,
+    overflow: 'hidden',
+    borderTopRightRadius: 22,
+    borderBottomRightRadius: 22,
+  },
+  cloud1Position: {
+    position: 'absolute',
+    top: -4,
+    right: 32,
+    opacity: 0.98,
+  },
+  cloud2Position: {
+    position: 'absolute',
+    top: 24,
+    right: -14,
+    opacity: 0.98,
+  },
+  cloud3Position: {
+    position: 'absolute',
+    top: 40,
+    right: 64,
+    opacity: 0.98,
+  },
+  cloud4Position: {
+    position: 'absolute',
+    bottom: -10,
+    right: 26,
+    opacity: 0.98,
+  },
+
+  /* Left Welcome Content */
+  welcomeLeftContent: {
+    justifyContent: 'center',
+    zIndex: 10,
+    maxWidth: '75%',
+  },
+  welcomeGreetingText: {
+    fontSize: 13.5,
+    fontWeight: '500',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+  welcomeUserNameText: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+    marginTop: 1,
+  },
+  welcomeDividerLine: {
+    height: 1.2,
+    backgroundColor: 'rgba(255, 255, 255, 0.75)',
+    width: 155,
+    marginVertical: 6,
+  },
+
+  /* Duration row at bottom of banner */
+  durationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  durationItalicText: {
+    fontSize: 13,
+    fontWeight: '700',
+    fontStyle: 'italic',
+    color: '#FFFFFF',
+    lineHeight: 16.5,
+  },
+  durationNumberRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginLeft: 10,
+  },
+  durationBigNumber: {
+    fontSize: 34,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    lineHeight: 38,
+    letterSpacing: -1,
+  },
+  durationUnitText: {
+    fontSize: 12.5,
+    fontWeight: '500',
+    color: '#FFFFFF',
+    marginLeft: 3,
+    marginBottom: 2,
   },
 });

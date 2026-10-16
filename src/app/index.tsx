@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,16 +18,39 @@ import { AuthTransition, AnimatedAuthHeader, AnimatedAuthBody } from '@/componen
 import { useAuth } from '@/context/auth-context';
 import { getErrorMessage } from '@/utils/error-mapper';
 import { isProfileComplete } from '@/types/auth';
+import { PageTransitionSplash } from '@/components/splash/CityBuildingSplash';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, isAuthenticated, user } = useAuth();
+  const { login, isAuthenticated, user, isLoading: isAuthLoading } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+
+  // Auto-redirect jika user sudah login / memiliki sesi aktif
+  useEffect(() => {
+    if (!isAuthLoading && isAuthenticated && user) {
+      if (isProfileComplete(user)) {
+        router.replace('/dashboard');
+      } else {
+        router.replace('/complete-profile');
+      }
+    }
+  }, [isAuthLoading, isAuthenticated, user, router]);
+
+  if (isAuthLoading || (isAuthenticated && user)) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <PageTransitionSplash
+          visible={true}
+          message="Menyambungkan sesi aktif..."
+        />
+      </View>
+    );
+  }
 
   const validate = () => {
     const newErrors: { email?: string; password?: string } = {};
@@ -100,32 +123,6 @@ export default function LoginScreen() {
               <Text className="text-[13px] text-red-700 flex-1 font-medium">
                 {serverError}
               </Text>
-            </View>
-          ) : null}
-
-          {/* Active Session Notification (if already logged in) */}
-          {isAuthenticated && user ? (
-            <View className="flex-row items-center justify-between bg-blue-50 border border-blue-200 p-3 rounded-xl mb-4">
-              <View className="flex-1 mr-2">
-                <Text className="text-xs text-aura-primary font-semibold">
-                  Sesi Aktif: {user.name}
-                </Text>
-                <Text className="text-[11px] text-slate-500">{user.email}</Text>
-              </View>
-              <Pressable
-                onPress={() => {
-                  if (isProfileComplete(user)) {
-                    router.replace('/dashboard');
-                  } else {
-                    router.replace('/complete-profile');
-                  }
-                }}
-                className="bg-aura-primary py-1 px-3 rounded-lg"
-              >
-                <Text className="text-white text-xs font-bold">
-                  {isProfileComplete(user) ? 'Buka App' : 'Lengkapi Profil'}
-                </Text>
-              </Pressable>
             </View>
           ) : null}
 

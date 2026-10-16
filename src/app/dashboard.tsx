@@ -19,14 +19,17 @@ import {
   Platform,
   Pressable,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   Text,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
+import { mobilityService } from '@/services/mobilityService';
+import { backgroundMobilityTracker } from '@/services/backgroundMobilityTracker';
+import { ExposureStats } from '@/types/mobility';
+import { PageTransitionSplash } from '@/components/splash/CityBuildingSplash';
 
 function getAqiGradient(aqi: number): [string, string] {
   if (aqi <= 50) return ['#34D399', '#10B981']; // Aman
@@ -36,6 +39,9 @@ function getAqiGradient(aqi: number): [string, string] {
 
 function getWeatherGradient(condition: string): [string, string, string] {
   if (condition === 'Hujan') return ['#1D4ED8', '#2563EB', '#3B82F6'];
+  if (condition === 'Berasap' || condition === 'Asap' || condition === 'Hazy') {
+    return ['#334155', '#475569', '#64748B'];
+  }
   if (condition === 'Berawan') return ['#3B82F6', '#60A5FA', '#93C5FD'];
   return ['#2563EB', '#3B82F6', '#60A5FA']; // Cerah
 }
@@ -75,6 +81,9 @@ export default function DashboardScreen() {
   });
   const [nearbyZones, setNearbyZones] = useState<NearbyZoneResult[]>([]);
   const [analysisData, setAnalysisData] = useState<WeeklyAnalysisResponse | null>(null);
+  const [mobilityStats, setMobilityStats] = useState<ExposureStats | null>(null);
+  const [simulatedMinutes, setSimulatedMinutes] = useState<number | null>(null);
+  const [showSimulateModal, setShowSimulateModal] = useState(false);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
@@ -122,6 +131,61 @@ export default function DashboardScreen() {
         name: activeCoords.name,
       });
       setAnalysisData(analysisRes);
+
+      // 3. Fetch data riil durasi di jalan hari ini & paparan polusi dari aurabackend
+      try {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const mobilityRes = await mobilityService.getDailyAnalysis(todayStr, user?.uid);
+        if (mobilityRes && mobilityRes.stats) {
+          setMobilityStats(mobilityRes.stats);
+        } else {
+          // Hitung dari waypoints in-memory GPS yang telah terkumpul secara riil
+          const collected = backgroundMobilityTracker.getCollectedWaypoints();
+          let outdoor = 0;
+          let indoor = 0;
+          collected.forEach((wp) => {
+            if (wp.classification === 'indoor' || wp.is_stay) {
+              indoor += wp.duration_minutes;
+            } else {
+              outdoor += wp.duration_minutes;
+            }
+          });
+
+          setMobilityStats({
+            total_outdoor_minutes: outdoor,
+            total_indoor_minutes: indoor,
+            average_outdoor_aqi: 0,
+            average_outdoor_pm25: 0,
+            max_aqi: 0,
+            worst_area_name: '-',
+            worst_area_aqi: 0,
+            waypoints_processed: collected.length,
+          });
+        }
+      } catch {
+        // Jika offline atau belum ada data di backend, gunakan data in-memory aktual dari GPS tracker
+        const collected = backgroundMobilityTracker.getCollectedWaypoints();
+        let outdoor = 0;
+        let indoor = 0;
+        collected.forEach((wp) => {
+          if (wp.classification === 'indoor' || wp.is_stay) {
+            indoor += wp.duration_minutes;
+          } else {
+            outdoor += wp.duration_minutes;
+          }
+        });
+
+        setMobilityStats({
+          total_outdoor_minutes: outdoor,
+          total_indoor_minutes: indoor,
+          average_outdoor_aqi: 0,
+          average_outdoor_pm25: 0,
+          max_aqi: 0,
+          worst_area_name: '-',
+          worst_area_aqi: 0,
+          waypoints_processed: collected.length,
+        });
+      }
     } catch (err: any) {
       console.warn('[Dashboard] Error fetching dynamic dashboard data:', err);
     } finally {
@@ -129,7 +193,7 @@ export default function DashboardScreen() {
       setIsRefreshing(false);
       setIsLoadingLocation(false);
     }
-  }, []);
+  }, [user?.uid]);
 
   useEffect(() => {
     loadDashboardData();
@@ -187,7 +251,8 @@ export default function DashboardScreen() {
     : 146;
   const tempValue = todayForecast
     ? Math.round(
-        (todayForecast as any).temperature_c ||
+        todayForecast.temperature_c ??
+          (todayForecast as any).temperature ??
           (33 - (todayForecast.precipitation_mm > 0.5 ? 4 : 0))
       )
     : 33;
@@ -195,29 +260,62 @@ export default function DashboardScreen() {
   const isCloudy =
     (todayForecast?.humidity_percent ?? 0) > 70 ||
     (todayForecast?.dispersion_condition ?? '').toLowerCase().includes('normal');
-  const weatherCondition = isRainy ? 'Hujan' : isCloudy ? 'Berawan' : 'Cerah';
+  const isSmoky =
+    (todayForecast?.weather_condition ?? '').toLowerCase().includes('asap') ||
+    (todayForecast?.dispersion_condition ?? '').toLowerCase().includes('asap') ||
+    (todayForecast?.dispersion_condition ?? '').toLowerCase().includes('haze');
+
+  const weatherCondition =
+    todayForecast?.weather_condition ||
+    (isRainy ? 'Hujan' : isSmoky ? 'Berasap' : isCloudy ? 'Berawan' : 'Cerah');
   const impactLevelValue: ImpactLevel = todayForecast?.impact_level || 'Waspada';
 
   const ringColors = getImpactRingColors(impactLevelValue);
 
-  const navigateToPollutionImpact = () => {
-    router.push({
-      pathname: '/pollution-impact',
-      params: {
-        lat: userLocation.lat.toString(),
-        lon: userLocation.lon.toString(),
-        name: userLocation.name,
-      },
+  const [transitionSplash, setTransitionSplash] = useState<{
+    visible: boolean;
+    message: string;
+  }>({ visible: false, message: '' });
+
+  const navigateToPollutionImpact = (customMessage?: unknown) => {
+    const msg =
+      typeof customMessage === 'string'
+        ? customMessage
+        : 'Menyiapkan Analisis Polusi & Cuaca...';
+    setTransitionSplash({
+      visible: true,
+      message: msg,
     });
+    setTimeout(() => {
+      router.push({
+        pathname: '/pollution-impact',
+        params: {
+          lat: userLocation.lat.toString(),
+          lon: userLocation.lon.toString(),
+          name: userLocation.name,
+        },
+      });
+      setTimeout(() => {
+        setTransitionSplash({ visible: false, message: '' });
+      }, 600);
+    }, 450);
   };
 
+  // ─── Durasi di Luar Ruangan (Riil atau Simulasi Menit untuk Testing) ───
+  const outdoorMinutes =
+    simulatedMinutes !== null
+      ? simulatedMinutes
+      : mobilityStats
+        ? mobilityStats.total_outdoor_minutes
+        : 0;
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
       <ScrollView
         style={{ flex: 1, backgroundColor: '#FFFFFF' }}
-        contentContainerStyle={{ paddingTop: topPadding, paddingBottom: 50 }}
+        contentContainerStyle={{ paddingTop: 0, paddingBottom: 50 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -234,7 +332,10 @@ export default function DashboardScreen() {
           isLoading={isLoadingLocation}
           onSearchPress={() => setIsMapFullscreen(true)}
           onMapPress={() => setIsMapFullscreen(true)}
+          onBannerPress={() => setShowSimulateModal(true)}
           onProfilePress={() => setShowAccountModal(true)}
+          userName={user?.name || 'FREYA JAWANTARA'}
+          outdoorMinutes={outdoorMinutes}
         />
 
         {/* 2. THREE NAVIGATION BUTTONS (Group 723, Group 724, Group 725) */}
@@ -267,7 +368,7 @@ export default function DashboardScreen() {
                 lineHeight: 16,
               }}
             >
-              Deteksi{'\n'}Batuk
+              Cek Kesehatan{'\n'}Paru
             </Text>
           </Pressable>
 
@@ -496,9 +597,9 @@ export default function DashboardScreen() {
                 }}
               >
                 <Ionicons
-                  name={isRainy ? 'rainy' : isCloudy ? 'cloud' : 'sunny'}
+                  name={isRainy ? 'rainy' : isSmoky ? 'cloudy' : isCloudy ? 'cloud' : 'sunny'}
                   size={24}
-                  color={isRainy ? '#93C5FD' : isCloudy ? '#E0F2FE' : '#FDE047'}
+                  color={isRainy ? '#93C5FD' : isSmoky ? '#CBD5E1' : isCloudy ? '#E0F2FE' : '#FDE047'}
                   style={{ alignSelf: 'center', marginBottom: 6 }}
                 />
                 <Text
@@ -638,8 +739,9 @@ export default function DashboardScreen() {
           </Pressable>
         </ScrollView>
 
-        {/* 4. SOLUTION / MEDICINE BANNER (Obat 1.png) */}
-        <View
+        {/* 4. SOLUTION / MEDICINE BANNER (Obat 1.png) -> Kebutuhan Harian */}
+        <Pressable
+          onPress={() => router.push('/kebutuhan-harian' as any)}
           style={{
             marginHorizontal: 16,
             marginTop: 22,
@@ -685,8 +787,7 @@ export default function DashboardScreen() {
             </Text>
 
             {/* Cek Button */}
-            <Pressable
-              onPress={() => router.push('/ceksekarang')}
+            <View
               style={{
                 backgroundColor: '#FFFFFF',
                 borderRadius: 999,
@@ -699,9 +800,9 @@ export default function DashboardScreen() {
               }}
             >
               <Text style={{ color: '#1E293B', fontWeight: '700', fontSize: 12 }}>Cek</Text>
-            </Pressable>
+            </View>
           </LinearGradient>
-        </View>
+        </Pressable>
 
         {/* 4.5 FEATURE BANNER: SCAN KESEHATAN KULIT */}
         <Pressable
@@ -992,6 +1093,180 @@ export default function DashboardScreen() {
         userLocation={userLocation}
         onClose={() => setIsMapFullscreen(false)}
       />
+
+      {/* Modal Simulasi Menit Durasi Luar Ruangan (Mode Pengujian & Testing) */}
+      <Modal
+        visible={showSimulateModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSimulateModal(false)}
+      >
+        <Pressable
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(15, 23, 42, 0.6)',
+            justifyContent: 'flex-end',
+          }}
+          onPress={() => setShowSimulateModal(false)}
+        >
+          <Pressable
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              padding: 24,
+              paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+            }}
+            onPress={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 16,
+              }}
+            >
+              <View>
+                <Text style={{ fontSize: 18, fontWeight: '800', color: '#0F172A' }}>
+                  Aktivitas Luar Ruangan
+                </Text>
+                <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>
+                  Durasi saat ini:{' '}
+                  <Text style={{ fontWeight: '800', color: '#1E6CEF' }}>
+                    {outdoorMinutes >= 60
+                      ? `${(outdoorMinutes / 60).toFixed(1).replace(/\.0$/, '')} jam (${outdoorMinutes} mnt)`
+                      : `${outdoorMinutes} menit`}
+                  </Text>
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={() => setShowSimulateModal(false)}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: '#F1F5F9',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Ionicons name="close" size={20} color="#64748B" />
+              </Pressable>
+            </View>
+
+            {/* Subtitle & Quick Options */}
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '700',
+                color: '#475569',
+                marginBottom: 10,
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+              }}
+            >
+              Pilih Simulasi Menit (Testing Mode)
+            </Text>
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
+              {[
+                { label: '0 mnt (Reset)', mins: 0 },
+                { label: '15 mnt', mins: 15 },
+                { label: '30 mnt', mins: 30 },
+                { label: '45 mnt', mins: 45 },
+                { label: '60 mnt (1 jam)', mins: 60 },
+                { label: '90 mnt (1.5 jam)', mins: 90 },
+                { label: '120 mnt (2 jam)', mins: 120 },
+              ].map((opt) => {
+                const isSelected = outdoorMinutes === opt.mins;
+                return (
+                  <Pressable
+                    key={opt.mins}
+                    onPress={() => {
+                      setSimulatedMinutes(opt.mins);
+                    }}
+                    style={{
+                      paddingVertical: 9,
+                      paddingHorizontal: 14,
+                      borderRadius: 14,
+                      backgroundColor: isSelected ? '#1E6CEF' : '#F8FAFC',
+                      borderWidth: 1.5,
+                      borderColor: isSelected ? '#1E6CEF' : '#E2E8F0',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: '700',
+                        color: isSelected ? '#FFFFFF' : '#334155',
+                      }}
+                    >
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* AI Diagnosis Action Button */}
+            <Pressable
+              onPress={() => {
+                setShowSimulateModal(false);
+                setTransitionSplash({
+                  visible: true,
+                  message: 'Menghubungkan ke Dokter Paru AI...',
+                });
+                setTimeout(() => {
+                  router.push({
+                    pathname: '/ai-pollution-impact' as any,
+                    params: {
+                      lat: userLocation.lat.toString(),
+                      lon: userLocation.lon.toString(),
+                      name: userLocation.name,
+                      average_risk_score: todayForecast
+                        ? String(Math.round(todayForecast.health_risk_score))
+                        : '68',
+                      outdoor_minutes: outdoorMinutes.toString(),
+                    },
+                  });
+                  setTimeout(() => {
+                    setTransitionSplash({ visible: false, message: '' });
+                  }, 600);
+                }, 450);
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#1E6CEF',
+                paddingVertical: 14,
+                borderRadius: 16,
+                gap: 8,
+                shadowColor: '#1E6CEF',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.25,
+                shadowRadius: 8,
+                elevation: 4,
+              }}
+            >
+              <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontSize: 14.5, fontWeight: '700' }}>
+                Lihat Diagnosa Dokter Paru AI ({outdoorMinutes} mnt)
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Page Transition Splash Animation */}
+      <PageTransitionSplash
+        visible={transitionSplash.visible}
+        message={transitionSplash.message}
+      />
     </SafeAreaView>
   );
 }
+
