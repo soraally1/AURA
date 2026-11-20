@@ -13,6 +13,8 @@ import { AuthHeader } from '@/components/auth/AuthHeader';
 import { ProfileInput } from '@/components/auth/ProfileInput';
 import { GradientButton } from '@/components/auth/GradientButton';
 import { AnimatedAuthHeader, AnimatedAuthBody } from '@/components/auth/AuthTransition';
+import { VoiceRegistrationAgent } from '@/components/auth/VoiceRegistrationAgent';
+import { ProfileDraft } from '@/services/voiceAgentService';
 import { useAuth } from '@/context/auth-context';
 import { getErrorMessage } from '@/utils/error-mapper';
 import { isProfileComplete } from '@/types/auth';
@@ -31,6 +33,7 @@ export default function CompleteProfileScreen() {
   const [tinggiBadan, setTinggiBadan] = useState('');
   const [beratBadan, setBeratBadan] = useState('');
   const [waktuDiJalan, setWaktuDiJalan] = useState('');
+  const [inputMode, setInputMode] = useState<'voice' | 'manual'>('voice');
   const [isLoading, setIsLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [errors, setErrors] = useState<{
@@ -108,14 +111,56 @@ export default function CompleteProfileScreen() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleContinue = async () => {
-    setServerError(null);
-    if (!validate()) return;
+  const currentDraft: ProfileDraft = {
+    usia: usia.trim() ? parseInt(usia.trim(), 10) || null : null,
+    tinggi_badan: tinggiBadan.trim()
+      ? parseFloat(tinggiBadan.trim().replace(',', '.')) || null
+      : null,
+    berat_badan: beratBadan.trim()
+      ? parseFloat(beratBadan.trim().replace(',', '.')) || null
+      : null,
+    waktu_di_jalan: waktuDiJalan.trim() !== ''
+      ? (() => {
+          const parsed = parseFloat(waktuDiJalan.trim().replace(',', '.'));
+          return isNaN(parsed) ? null : parsed;
+        })()
+      : null,
+  };
 
-    const parsedUsia = parseInt(usia.trim(), 10);
-    const parsedTinggi = parseFloat(tinggiBadan.trim().replace(',', '.'));
-    const parsedBerat = parseFloat(beratBadan.trim().replace(',', '.'));
-    const parsedWaktu = parseFloat(waktuDiJalan.trim().replace(',', '.'));
+  const handleVoiceDraftChange = (draft: ProfileDraft) => {
+    setUsia(draft.usia !== null ? String(draft.usia) : '');
+    setTinggiBadan(draft.tinggi_badan !== null ? String(draft.tinggi_badan) : '');
+    setBeratBadan(draft.berat_badan !== null ? String(draft.berat_badan) : '');
+    setWaktuDiJalan(draft.waktu_di_jalan !== null ? String(draft.waktu_di_jalan) : '');
+    setErrors({});
+    setServerError(null);
+  };
+
+  const handleContinue = async (overrideDraft?: ProfileDraft) => {
+    setServerError(null);
+    let parsedUsia: number;
+    let parsedTinggi: number;
+    let parsedBerat: number;
+    let parsedWaktu: number;
+
+    if (
+      overrideDraft &&
+      overrideDraft.usia !== null &&
+      overrideDraft.tinggi_badan !== null &&
+      overrideDraft.berat_badan !== null &&
+      overrideDraft.waktu_di_jalan !== null
+    ) {
+      parsedUsia = overrideDraft.usia;
+      parsedTinggi = overrideDraft.tinggi_badan;
+      parsedBerat = overrideDraft.berat_badan;
+      parsedWaktu = overrideDraft.waktu_di_jalan;
+    } else {
+      if (!validate()) return;
+      parsedUsia = parseInt(usia.trim(), 10);
+      parsedTinggi = parseFloat(tinggiBadan.trim().replace(',', '.'));
+      parsedBerat = parseFloat(beratBadan.trim().replace(',', '.'));
+      parsedWaktu = parseFloat(waktuDiJalan.trim().replace(',', '.'));
+    }
 
     try {
       setIsLoading(true);
@@ -189,6 +234,48 @@ export default function CompleteProfileScreen() {
         {/* Form Body with slide-up animation */}
         <AnimatedAuthBody delay={180}>
         <View className="px-7 pt-3 pb-8">
+          {/* Dynamic Mode Switcher: Asisten Suara AI vs Isi Manual */}
+          <View className="flex-row bg-blue-50 border border-blue-100 rounded-full p-1 mb-4">
+            <Pressable
+              onPress={() => setInputMode('voice')}
+              className={`flex-1 flex-row items-center justify-center gap-1.5 py-2.5 rounded-full ${
+                inputMode === 'voice' ? 'bg-aura-primary' : ''
+              }`}
+            >
+              <Ionicons
+                name="mic"
+                size={15}
+                color={inputMode === 'voice' ? '#FFFFFF' : '#2563EB'}
+              />
+              <Text
+                className={`text-xs font-bold ${
+                  inputMode === 'voice' ? 'text-white' : 'text-blue-700'
+                }`}
+              >
+                Asisten Suara AI
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setInputMode('manual')}
+              className={`flex-1 flex-row items-center justify-center gap-1.5 py-2.5 rounded-full ${
+                inputMode === 'manual' ? 'bg-aura-primary' : ''
+              }`}
+            >
+              <Ionicons
+                name="create-outline"
+                size={15}
+                color={inputMode === 'manual' ? '#FFFFFF' : '#2563EB'}
+              />
+              <Text
+                className={`text-xs font-bold ${
+                  inputMode === 'manual' ? 'text-white' : 'text-blue-700'
+                }`}
+              >
+                Isi Form Manual
+              </Text>
+            </Pressable>
+          </View>
+
           {/* Server Error Alert Banner */}
           {serverError ? (
             <View className="flex-row items-center gap-2 bg-red-50 border border-red-200 p-3 rounded-xl mb-4">
@@ -199,6 +286,17 @@ export default function CompleteProfileScreen() {
             </View>
           ) : null}
 
+          {inputMode === 'voice' ? (
+            <VoiceRegistrationAgent
+              userName={params.name || user?.name}
+              profile={currentDraft}
+              onProfileChange={handleVoiceDraftChange}
+              onReadyToSubmit={(draft) => void handleContinue(draft)}
+              onSwitchToManual={() => setInputMode('manual')}
+              isSubmitting={isLoading}
+            />
+          ) : (
+          <>
           {/* Usia Input */}
           <ProfileInput
             label="Usia"
@@ -269,10 +367,12 @@ export default function CompleteProfileScreen() {
           {/* Action Button: Lanjut ke Dashboard */}
           <GradientButton
             title="Lanjut ke Dashboard"
-            onPress={handleContinue}
+            onPress={() => void handleContinue()}
             isLoading={isLoading}
             className="mt-4"
           />
+          </>
+          )}
 
           {/* Optional Direct Navigation if profile is already complete */}
           {isAuthenticated && isProfileComplete(user) ? (
