@@ -140,6 +140,7 @@ export default function PollutionImpactScreen() {
     lat?: string;
     lon?: string;
     name?: string;
+    mode?: 'map' | 'forecast';
   }>();
 
   // Active Selected Location
@@ -181,8 +182,16 @@ export default function PollutionImpactScreen() {
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [isNavigatingToAi, setIsNavigatingToAi] = useState(false);
 
-  // Mode Tampilan: Peta Interaktif 3D Jateng (default) vs Detail Prakiraan 7 Hari
-  const [pageViewMode, setPageViewMode] = useState<'map' | 'forecast'>('map');
+  // Mode Tampilan: Peta Interaktif 3D Jateng vs Detail Prakiraan 7 Hari
+  const [pageViewMode, setPageViewMode] = useState<'map' | 'forecast'>(() => {
+    return searchParams.mode === 'forecast' ? 'forecast' : 'map';
+  });
+
+  useEffect(() => {
+    if (searchParams.mode === 'forecast' || searchParams.mode === 'map') {
+      setPageViewMode(searchParams.mode);
+    }
+  }, [searchParams.mode]);
   const [selectedJatengRegion, setSelectedJatengRegion] = useState<JatengRegionHealth | null>(null);
 
   const handleMapRegionSelect = useCallback((region: JatengRegionHealth) => {

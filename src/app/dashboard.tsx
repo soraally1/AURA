@@ -283,14 +283,10 @@ export default function DashboardScreen() {
     message: string;
   }>({ visible: false, message: '' });
 
-  const navigateToPollutionImpact = (customMessage?: unknown) => {
-    const msg =
-      typeof customMessage === 'string'
-        ? customMessage
-        : 'Menyiapkan Analisis Penyakit & Polusi...';
+  const navigateToPollutionMap = () => {
     setTransitionSplash({
       visible: true,
-      message: msg,
+      message: 'Membuka Peta & Analisis Penyakit Jateng...',
     });
     setTimeout(() => {
       router.push({
@@ -299,12 +295,38 @@ export default function DashboardScreen() {
           lat: userLocation.lat.toString(),
           lon: userLocation.lon.toString(),
           name: userLocation.name,
+          mode: 'map',
         },
       });
       setTimeout(() => {
         setTransitionSplash({ visible: false, message: '' });
       }, 600);
     }, 450);
+  };
+
+  const navigateTo7DayForecast = () => {
+    setTransitionSplash({
+      visible: true,
+      message: 'Menyiapkan Prakiraan Cuaca 7 Hari...',
+    });
+    setTimeout(() => {
+      router.push({
+        pathname: '/pollution-impact',
+        params: {
+          lat: userLocation.lat.toString(),
+          lon: userLocation.lon.toString(),
+          name: userLocation.name,
+          mode: 'forecast',
+        },
+      });
+      setTimeout(() => {
+        setTransitionSplash({ visible: false, message: '' });
+      }, 600);
+    }, 450);
+  };
+
+  const navigateToPollutionImpact = (customMessage?: unknown) => {
+    navigateTo7DayForecast();
   };
 
   // ─── Durasi di Luar Ruangan (Riil atau Simulasi Menit untuk Testing) ───
@@ -423,19 +445,19 @@ export default function DashboardScreen() {
             </Text>
           </Pressable>
 
-          {/* 3. Analisis Penyakit Berdasarkan Aktivitas dan Polusi */}
+          {/* 3. Analisis Penyakit Jateng (Peta 3D & Open Data Dinkes) */}
           <Pressable
-            onPress={navigateToPollutionImpact}
+            onPress={navigateToPollutionMap}
             style={({ pressed }) => [
               {
                 alignItems: 'center',
-                width: 114,
+                width: 104,
                 opacity: pressed ? 0.78 : 1,
                 transform: [{ scale: pressed ? 0.95 : 1 }],
               },
             ]}
             accessibilityRole="button"
-            accessibilityLabel="Analisis Penyakit Berdasarkan Aktivitas dan Polusi"
+            accessibilityLabel="Analisis Penyakit Jateng"
             hitSlop={6}
           >
             <Image
@@ -453,11 +475,70 @@ export default function DashboardScreen() {
                 lineHeight: 14,
               }}
             >
-              Analisis Penyakit{'\n'}Berdasarkan{'\n'}Aktivitas & Polusi
+              Analisis Penyakit{'\n'}Jawa Tengah
             </Text>
           </Pressable>
 
-          {/* 4. Mulai Periksa (Navigasi ke Dokter & Rumah Sakit Mitra) */}
+          {/* 4. Prakiraan 7 Hari (AI Cuaca & Polusi) */}
+          <Pressable
+            onPress={navigateTo7DayForecast}
+            style={({ pressed }) => [
+              {
+                alignItems: 'center',
+                width: 96,
+                opacity: pressed ? 0.78 : 1,
+                transform: [{ scale: pressed ? 0.95 : 1 }],
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Prakiraan 7 Hari"
+            hitSlop={6}
+          >
+            <View
+              style={{
+                width: 76,
+                height: 76,
+                borderRadius: 22,
+                backgroundColor: '#E0F2FE',
+                borderWidth: 1.5,
+                borderColor: '#BAE6FD',
+                alignItems: 'center',
+                justifyContent: 'center',
+                shadowColor: '#0284C7',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.12,
+                shadowRadius: 4,
+                elevation: 2,
+              }}
+            >
+              <LinearGradient
+                colors={['#38BDF8', '#0284C7']}
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 16,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Ionicons name="calendar" size={26} color="#FFFFFF" />
+              </LinearGradient>
+            </View>
+            <Text
+              style={{
+                color: '#1E293B',
+                fontSize: 11,
+                fontWeight: '700',
+                textAlign: 'center',
+                marginTop: 6,
+                lineHeight: 14,
+              }}
+            >
+              Prakiraan{'\n'}7 Hari
+            </Text>
+          </Pressable>
+
+          {/* 5. Mulai Periksa (Navigasi ke Dokter & Rumah Sakit Mitra) */}
           <Pressable
             onPress={() => router.push('/ceksekarang')}
             style={({ pressed }) => [
@@ -805,6 +886,164 @@ export default function DashboardScreen() {
                     Macet: {todayForecast.traffic_severity}
                   </Text>
                 )}
+              </View>
+            </LinearGradient>
+          </Pressable>
+
+          {/* Card 4: Dedicated Prakiraan 7 Hari */}
+          <Pressable
+            onPress={navigateTo7DayForecast}
+            style={{
+              width: 175,
+              height: 245,
+              borderRadius: 28,
+              overflow: 'hidden',
+              backgroundColor: '#0284C7',
+              shadowColor: '#0284C7',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.25,
+              shadowRadius: 10,
+              elevation: 5,
+            }}
+          >
+            <LinearGradient
+              colors={['#0284C7', '#0369A1', '#0C4A6E']}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={{ width: '100%', height: '100%', padding: 16, position: 'relative', justifyContent: 'space-between' }}
+            >
+              {/* Header Badge */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 }}>
+                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '800' }}>7 HARI</Text>
+                </View>
+                <Ionicons name="sparkles" size={14} color="#FDE047" />
+              </View>
+
+              {/* Center Content */}
+              <View style={{ alignItems: 'center', paddingVertical: 10 }}>
+                <Ionicons name="calendar-outline" size={38} color="#FFFFFF" style={{ marginBottom: 6 }} />
+                <Text
+                  style={{
+                    color: '#FFFFFF',
+                    fontSize: 17,
+                    fontWeight: '900',
+                    textAlign: 'center',
+                    textShadowColor: 'rgba(0,0,0,0.2)',
+                    textShadowOffset: { width: 0, height: 1 },
+                    textShadowRadius: 3,
+                  }}
+                >
+                  Prakiraan 7 Hari
+                </Text>
+                <Text
+                  style={{
+                    color: 'rgba(255,255,255,0.85)',
+                    fontSize: 11,
+                    fontWeight: '600',
+                    textAlign: 'center',
+                    marginTop: 3,
+                  }}
+                >
+                  Sensor Cuaca & Polusi
+                </Text>
+              </View>
+
+              {/* Bottom Action Pill */}
+              <View
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.25)',
+                  borderRadius: 20,
+                  paddingVertical: 6,
+                  paddingHorizontal: 12,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700', marginRight: 4 }}>
+                  Lihat Detail
+                </Text>
+                <Ionicons name="arrow-forward" size={12} color="#FFFFFF" />
+              </View>
+            </LinearGradient>
+          </Pressable>
+
+          {/* Card 5: Dedicated Peta Analisis Penyakit Jateng */}
+          <Pressable
+            onPress={navigateToPollutionMap}
+            style={{
+              width: 175,
+              height: 245,
+              borderRadius: 28,
+              overflow: 'hidden',
+              backgroundColor: '#059669',
+              shadowColor: '#059669',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.25,
+              shadowRadius: 10,
+              elevation: 5,
+            }}
+          >
+            <LinearGradient
+              colors={['#059669', '#047857', '#064E3B']}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={{ width: '100%', height: '100%', padding: 16, position: 'relative', justifyContent: 'space-between' }}
+            >
+              {/* Header Badge */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 }}>
+                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '800' }}>PETA 3D</Text>
+                </View>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#4ADE80' }} />
+              </View>
+
+              {/* Center Content */}
+              <View style={{ alignItems: 'center', paddingVertical: 10 }}>
+                <Ionicons name="map-outline" size={38} color="#FFFFFF" style={{ marginBottom: 6 }} />
+                <Text
+                  style={{
+                    color: '#FFFFFF',
+                    fontSize: 16,
+                    fontWeight: '900',
+                    textAlign: 'center',
+                    textShadowColor: 'rgba(0,0,0,0.2)',
+                    textShadowOffset: { width: 0, height: 1 },
+                    textShadowRadius: 3,
+                  }}
+                >
+                  Analisis Penyakit
+                </Text>
+                <Text
+                  style={{
+                    color: 'rgba(255,255,255,0.85)',
+                    fontSize: 11,
+                    fontWeight: '600',
+                    textAlign: 'center',
+                    marginTop: 3,
+                  }}
+                >
+                  35 Daerah Jawa Tengah
+                </Text>
+              </View>
+
+              {/* Bottom Action Pill */}
+              <View
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.25)',
+                  borderRadius: 20,
+                  paddingVertical: 6,
+                  paddingHorizontal: 12,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700', marginRight: 4 }}>
+                  Buka Peta
+                </Text>
+                <Ionicons name="arrow-forward" size={12} color="#FFFFFF" />
               </View>
             </LinearGradient>
           </Pressable>

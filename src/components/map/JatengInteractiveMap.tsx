@@ -38,6 +38,7 @@ interface JatengInteractiveMapProps {
 }
 
 type DisplayMetric = 'aqi' | 'diseases';
+type MapOverlayOption = 'icons' | 'labels';
 
 export function JatengInteractiveMap({
   onSelectRegion,
@@ -46,8 +47,7 @@ export function JatengInteractiveMap({
   const [activeRegionId, setActiveRegionId] = useState<string>(selectedRegionId);
   const [hoveredRegionId, setHoveredRegionId] = useState<string | null>(null);
   const [metricMode, setMetricMode] = useState<DisplayMetric>('aqi');
-  const [showLandmarks, setShowLandmarks] = useState<boolean>(true);
-  const [showLabels, setShowLabels] = useState<boolean>(true);
+  const [mapOverlay, setMapOverlay] = useState<MapOverlayOption>('icons');
   const [zoomLevel, setZoomLevel] = useState<number>(1);
 
   // Ambil data kesehatan daerah aktif dari service
@@ -176,33 +176,33 @@ export function JatengInteractiveMap({
           </Pressable>
         </View>
 
-        {/* Toggles: Landmarks & Labels */}
+        {/* Toggles Eksklusif: Hanya Logo Daerah ATAU Hanya Nama Daerah */}
         <View style={styles.toggleRow}>
           <Pressable
-            style={[styles.togglePill, showLandmarks && styles.togglePillActive]}
-            onPress={() => setShowLandmarks((prev) => !prev)}
+            style={[styles.togglePill, mapOverlay === 'icons' && styles.togglePillActive]}
+            onPress={() => setMapOverlay('icons')}
           >
             <Ionicons
-              name={showLandmarks ? 'location' : 'location-outline'}
+              name={mapOverlay === 'icons' ? 'sparkles' : 'sparkles-outline'}
               size={13}
-              color={showLandmarks ? '#0284C7' : '#64748B'}
+              color={mapOverlay === 'icons' ? '#0284C7' : '#64748B'}
             />
-            <Text style={[styles.togglePillText, showLandmarks && styles.togglePillTextActive]}>
-              Ikon Landmark ({showLandmarks ? 'ON' : 'OFF'})
+            <Text style={[styles.togglePillText, mapOverlay === 'icons' && styles.togglePillTextActive]}>
+              Hanya Logo Daerah
             </Text>
           </Pressable>
 
           <Pressable
-            style={[styles.togglePill, showLabels && styles.togglePillActive]}
-            onPress={() => setShowLabels((prev) => !prev)}
+            style={[styles.togglePill, mapOverlay === 'labels' && styles.togglePillActive]}
+            onPress={() => setMapOverlay('labels')}
           >
             <Ionicons
-              name={showLabels ? 'text' : 'text-outline'}
+              name={mapOverlay === 'labels' ? 'text' : 'text-outline'}
               size={13}
-              color={showLabels ? '#0284C7' : '#64748B'}
+              color={mapOverlay === 'labels' ? '#0284C7' : '#64748B'}
             />
-            <Text style={[styles.togglePillText, showLabels && styles.togglePillTextActive]}>
-              Nama Daerah
+            <Text style={[styles.togglePillText, mapOverlay === 'labels' && styles.togglePillTextActive]}>
+              Hanya Nama Daerah
             </Text>
           </Pressable>
         </View>
@@ -301,36 +301,29 @@ export function JatengInteractiveMap({
                       strokeLinejoin="round"
                       strokeLinecap="round"
                       onPress={() => handleRegionPress(region.id)}
-                      // Web hover support
-                      {...(Platform.OS === 'web'
-                        ? {
-                            onMouseEnter: () => setHoveredRegionId(region.id),
-                            onMouseLeave: () => setHoveredRegionId(null),
-                            cursor: 'pointer',
-                          }
-                        : {})}
                     />
                   );
                 })}
               </G>
 
-              {/* ─── LAYER 3: LABELS DAERAH ─── */}
-              {showLabels && (
+              {/* ─── LAYER 3: LABELS DAERAH (Hanya Muncul Jika Mode 'labels' Aktif) ─── */}
+              {mapOverlay === 'labels' && (
                 <G pointerEvents="none">
                   {JATENG_REGIONS.map((region) => {
                     const isSelected = region.id === activeRegionId;
+                    const fontSize = region.isKota ? 9.5 : 8;
                     return (
                       <SvgText
                         key={`label_${region.id}`}
                         x={region.center.x}
-                        y={region.center.y + (showLandmarks ? 14 : 2)}
-                        fontSize={region.isKota ? 9.5 : 8}
+                        y={region.center.y + 1}
+                        fontSize={fontSize}
                         fontWeight={isSelected || region.isKota ? 'bold' : '600'}
                         fill={isSelected ? '#0F172A' : '#1E293B'}
                         textAnchor="middle"
                         alignmentBaseline="central"
                         stroke="#FFFFFF"
-                        strokeWidth={0.6}
+                        strokeWidth={0.8}
                       >
                         {region.shortName}
                       </SvgText>
@@ -339,30 +332,22 @@ export function JatengInteractiveMap({
                 </G>
               )}
 
-              {/* ─── LAYER 4: LANDMARK VECTOR ICONS ON MAP ─── */}
-              {showLandmarks && (
+              {/* ─── LAYER 4: LANDMARK VECTOR ICONS ON MAP (Hanya Muncul Jika Mode 'icons' Aktif - LANGSUNG LOGO TANPA FRAME) ─── */}
+              {mapOverlay === 'icons' && (
                 <G pointerEvents="none">
                   {JATENG_REGIONS.map((region) => {
                     const isSelected = region.id === activeRegionId;
-                    const iconX = region.center.x - 10;
-                    const iconY = region.center.y - 12;
+                    const scale = isSelected ? 0.78 : 0.62;
+                    const iconX = region.center.x - 16 * scale;
+                    const iconY = region.center.y - 16 * scale;
 
                     return (
                       <G
                         key={`landmark_${region.id}`}
-                        transform={`translate(${iconX}, ${iconY}) scale(${isSelected ? 0.75 : 0.65})`}
+                        transform={`translate(${iconX}, ${iconY}) scale(${scale})`}
                       >
-                        {/* Lingkaran penanda di belakang ikon agar kontras */}
-                        <Circle
-                          cx="16"
-                          cy="16"
-                          r="14"
-                          fill="#FFFFFF"
-                          stroke={isSelected ? '#F59E0B' : '#64748B'}
-                          strokeWidth={isSelected ? 2.2 : 1}
-                          opacity={0.92}
-                        />
-                        {getLandmarkIcon(region.id, 24, isSelected ? '#B45309' : '#1E293B')}
+                        {/* Langsung icon vektor khas daerah tanpa frame lingkaran */}
+                        {getLandmarkIcon(region.id, 32, isSelected ? '#B45309' : '#1E293B')}
                       </G>
                     );
                   })}
