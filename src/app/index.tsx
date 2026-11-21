@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -32,22 +32,30 @@ export default function LoginScreen() {
 
   // Safety timeout: Cegah layar stuck selamanya di splash "Menyambungkan sesi aktif"
   const [showSplash, setShowSplash] = useState(true);
+  const hasNavigatedRef = useRef(false);
 
   useEffect(() => {
-    // Batas maksimal tampilan splash 2.5 detik agar pengguna tidak pernah stuck
+    // Batas maksimal tampilan splash 6.5 detik (selaras timeout authSessionService)
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, 2500);
+    }, 6500);
     return () => clearTimeout(timer);
   }, []);
 
   // Auto-redirect jika user sudah login / memiliki sesi aktif
   useEffect(() => {
-    if (!isAuthLoading && isAuthenticated && user) {
+    if (!isAuthLoading && (!isAuthenticated || !user)) {
+      hasNavigatedRef.current = false;
+      return;
+    }
+
+    if (!isAuthLoading && isAuthenticated && user && !hasNavigatedRef.current) {
       const target = isProfileComplete(user) ? '/dashboard' : '/complete-profile';
       const redirectTimer = setTimeout(() => {
+        if (hasNavigatedRef.current) return;
+        hasNavigatedRef.current = true;
         router.replace(target as any);
-      }, 100);
+      }, 60);
       return () => clearTimeout(redirectTimer);
     }
   }, [isAuthLoading, isAuthenticated, user, router]);
@@ -61,7 +69,8 @@ export default function LoginScreen() {
           message="Menyambungkan sesi aktif..."
           onSkip={() => {
             setShowSplash(false);
-            if (isAuthenticated && user) {
+            if (isAuthenticated && user && !hasNavigatedRef.current) {
+              hasNavigatedRef.current = true;
               router.replace(isProfileComplete(user) ? '/dashboard' : '/complete-profile');
             }
           }}
@@ -71,17 +80,16 @@ export default function LoginScreen() {
   }
 
   const validate = () => {
+    const trimmedEmail = email.trim();
     const newErrors: { email?: string; password?: string } = {};
-    if (!email.trim()) {
+    if (!trimmedEmail) {
       newErrors.email = 'Alamat email wajib diisi';
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       newErrors.email = 'Format email tidak valid';
     }
 
     if (!password) {
       newErrors.password = 'Password wajib diisi';
-    } else if (password.length < 8) {
-      newErrors.password = 'Password minimal 8 karakter';
     }
 
     setErrors(newErrors);
@@ -89,12 +97,15 @@ export default function LoginScreen() {
   };
 
   const handleLogin = async () => {
+    if (isLoading) return;
     setServerError(null);
     if (!validate()) return;
 
     try {
       setIsLoading(true);
-      const res = await login(email.trim(), password);
+      const normalizedEmail = email.trim().toLowerCase();
+      const res = await login(normalizedEmail, password);
+      hasNavigatedRef.current = true;
       // Jika profil belum lengkap (usia/tinggi/waktu di jalan), wajib lengkapi dulu
       if (isProfileComplete(res.user)) {
         router.replace('/dashboard');
@@ -102,6 +113,7 @@ export default function LoginScreen() {
         router.replace('/complete-profile');
       }
     } catch (err: any) {
+      hasNavigatedRef.current = false;
       const message = getErrorMessage(err);
       setServerError(message);
     } finally {
@@ -155,6 +167,10 @@ export default function LoginScreen() {
             }}
             keyboardType="email-address"
             autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="email"
+            textContentType="emailAddress"
+            returnKeyType="next"
             error={errors.email}
           />
 
@@ -168,6 +184,10 @@ export default function LoginScreen() {
               if (serverError) setServerError(null);
               if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
             }}
+            autoComplete="password"
+            textContentType="password"
+            returnKeyType="done"
+            onSubmitEditing={handleLogin}
             error={errors.password}
           />
 

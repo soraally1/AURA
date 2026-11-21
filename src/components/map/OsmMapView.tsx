@@ -529,7 +529,7 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, OsmMapViewProps>(
       <View style={[styles.container, style]}>
         <WebView
           ref={webViewRef}
-          source={{ html: mapHtml }}
+          source={{ html: mapHtml, baseUrl: 'https://aura.health.app' }}
           style={styles.webview}
           javaScriptEnabled
           domStorageEnabled

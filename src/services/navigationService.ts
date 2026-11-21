@@ -60,12 +60,18 @@ function isValidCoordinatesArray(coords: any): coords is [number, number][] {
 
 /**
  * Fallback to free Open Source Routing Machine (OSRM)
+ * Honors avoid_tolls / mode by excluding motorway segments for urban activity routing.
  */
 async function fetchOsrmRoute(
   origin: { latitude: number; longitude: number },
-  destination: { latitude: number; longitude: number }
+  destination: { latitude: number; longitude: number },
+  options?: { mode?: 'driving' | 'walking'; avoid_tolls?: boolean }
 ): Promise<NavigationRoute> {
-  const url = `https://router.project-osrm.org/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson&steps=true`;
+  const excludeParam =
+    options?.avoid_tolls !== false || options?.mode === 'walking'
+      ? '&exclude=motorway'
+      : '';
+  const url = `https://router.project-osrm.org/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson&steps=true${excludeParam}`;
   const response = await axios.get(url, { timeout: 10000 });
 
   const osrmRoute = response.data?.routes?.[0];
@@ -203,9 +209,9 @@ export const navigationService = {
       console.warn('[NavigationService] Backend route API unavailable, using OSRM:', err?.message || err);
     }
 
-    // 3. Fallback to free OSRM
+    // 3. Fallback to free OSRM (excluding toll roads by default)
     try {
-      const osrmRoute = await fetchOsrmRoute(origin, destination);
+      const osrmRoute = await fetchOsrmRoute(origin, destination, options);
       routeCache.set(cacheKey, { route: osrmRoute, timestamp: Date.now() });
       return osrmRoute;
     } catch (osrmErr: any) {

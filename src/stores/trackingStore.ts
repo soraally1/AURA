@@ -94,6 +94,7 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
       if (!state.isTracking) return state;
 
       let additionalDistance = 0;
+      // Ignore GPS jitter (> 0.5m and < 800m between ticks)
       if (state.waypoints.length > 0) {
         const prev = state.waypoints[state.waypoints.length - 1];
         const dist = calculateHaversineDistance(
@@ -102,8 +103,7 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
           waypoint.latitude,
           waypoint.longitude
         );
-        // Ignore GPS jitter (> 0.5m and < 200m between 2-second ticks)
-        if (dist >= 0.5 && dist <= 200) {
+        if (dist >= 1.5 && dist <= 800) {
           additionalDistance = dist;
         }
       }

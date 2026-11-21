@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -39,21 +39,29 @@ export default function RegisterScreen() {
 
   // Safety timeout: Cegah layar register stuck di splash "Menyambungkan sesi aktif"
   const [showSplash, setShowSplash] = useState(true);
+  const hasNavigatedRef = useRef(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, 2500);
+    }, 6500);
     return () => clearTimeout(timer);
   }, []);
 
   // Auto-redirect jika user sudah login / memiliki sesi aktif
   useEffect(() => {
-    if (!isAuthLoading && isAuthenticated && user) {
+    if (!isAuthLoading && (!isAuthenticated || !user)) {
+      hasNavigatedRef.current = false;
+      return;
+    }
+
+    if (!isAuthLoading && isAuthenticated && user && !hasNavigatedRef.current) {
       const target = isProfileComplete(user) ? '/dashboard' : '/complete-profile';
       const redirectTimer = setTimeout(() => {
+        if (hasNavigatedRef.current) return;
+        hasNavigatedRef.current = true;
         router.replace(target as any);
-      }, 100);
+      }, 60);
       return () => clearTimeout(redirectTimer);
     }
   }, [isAuthLoading, isAuthenticated, user, router]);
@@ -66,7 +74,8 @@ export default function RegisterScreen() {
           message="Menyambungkan sesi aktif..."
           onSkip={() => {
             setShowSplash(false);
-            if (isAuthenticated && user) {
+            if (isAuthenticated && user && !hasNavigatedRef.current) {
+              hasNavigatedRef.current = true;
               router.replace(isProfileComplete(user) ? '/dashboard' : '/complete-profile');
             }
           }}
@@ -89,9 +98,10 @@ export default function RegisterScreen() {
       newErrors.name = 'Nama maksimal 100 karakter';
     }
 
-    if (!email.trim()) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
       newErrors.email = 'Alamat email wajib diisi';
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       newErrors.email = 'Format email tidak valid';
     }
 
@@ -121,7 +131,7 @@ export default function RegisterScreen() {
       pathname: '/complete-profile',
       params: {
         name: name.trim(),
-        email: email.trim(),
+        email: email.trim().toLowerCase(),
         password,
       },
     });

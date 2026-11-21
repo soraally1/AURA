@@ -26,6 +26,7 @@ import {
 } from '@/components/map/OsmMapView';
 import { useAuth } from '@/context/auth-context';
 import { navigationService } from '@/services/navigationService';
+import { backgroundMobilityTracker } from '@/services/backgroundMobilityTracker';
 import { findNearestSemarangRoad } from '@/services/semarangRoadService';
 import { zonesApi } from '@/services/zonesApi';
 import { useTrackingStore } from '@/stores/trackingStore';
@@ -171,18 +172,33 @@ export default function ActiveTrackingScreen() {
       };
       setUserLocation(startCoord);
 
-      // 3. Start backend session
-      const sessionResponse = await navigationService.startTrackingSession(
-        user?.uid || 'guest_user',
-        startCoord
-      );
+      // 3. Start backend session (with offline/local fallback so GPS tracking never fails)
+      let activeSessionId = `local_${Date.now()}`;
+      try {
+        if (user?.uid) {
+          const sessionResponse = await navigationService.startTrackingSession(
+            user.uid,
+            startCoord
+          );
+          if (sessionResponse?.session_id) {
+            activeSessionId = sessionResponse.session_id;
+          }
+        }
+      } catch (sessionErr) {
+        console.warn('[ActiveTracking] Using local tracking session ID:', sessionErr);
+      }
 
-      sessionIdRef.current = sessionResponse.session_id;
+      sessionIdRef.current = activeSessionId;
+      void backgroundMobilityTracker.recordGpsCoordinate(
+        startCoord.latitude,
+        startCoord.longitude,
+        initialLoc.coords.accuracy ?? undefined
+      );
 
       // 4. Update store
       useTrackingStore.getState().startTracking();
       useTrackingStore.getState().setActiveSession({
-        session_id: sessionResponse.session_id,
+        session_id: activeSessionId,
         session_name: `Perjalanan ${new Date().toLocaleTimeString('id-ID')}`,
         started_at: new Date().toISOString(),
         status: 'active',
@@ -232,6 +248,11 @@ export default function ActiveTrackingScreen() {
           const storeState = useTrackingStore.getState();
           storeState.addWaypoint(newWaypoint);
           storeState.setCurrentSpeed(location.coords.speed || 0);
+          void backgroundMobilityTracker.recordGpsCoordinate(
+            location.coords.latitude,
+            location.coords.longitude,
+            location.coords.accuracy ?? undefined
+          );
 
           // Auto-sync every 10 unsynced waypoints
           const unsyncedCount = storeState.waypoints.length - storeState.lastSyncedIndex;

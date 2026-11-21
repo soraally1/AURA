@@ -31,6 +31,7 @@ import {
   OsmPolylineItem,
 } from '@/components/map/OsmMapView';
 import { navigationService } from '@/services/navigationService';
+import { backgroundMobilityTracker } from '@/services/backgroundMobilityTracker';
 import {
   findNearestSemarangRoad,
   haversineMeters,
@@ -49,6 +50,8 @@ interface SearchDestinationItem {
 }
 
 const POPULAR_SEMARANG_POIS: SearchDestinationItem[] = [
+  { name: 'Kawasan POJ City (Pearl of Java)', subtitle: 'Kawasan Pesisir • Marina Semarang', lat: -6.9472, lon: 110.3882, source: 'gpkg' },
+  { name: 'Pantai Marina Semarang', subtitle: 'Wisata Pesisir • Semarang Barat', lat: -6.9488, lon: 110.3895, source: 'gpkg' },
   { name: 'RSUP Dr. Kariadi', subtitle: 'Rumah Sakit • Semarang Selatan', lat: -7.0015, lon: 110.4128, source: 'gpkg' },
   { name: 'Simpang Lima Semarang', subtitle: 'Pusat Kota • Semarang Tengah', lat: -6.9904, lon: 110.4227, source: 'gpkg' },
   { name: 'Lawang Sewu', subtitle: 'Landmark • Tugu Muda', lat: -6.9839, lon: 110.4104, source: 'gpkg' },
@@ -223,9 +226,33 @@ export default function UniversalNavigationScreen() {
       setDestinationLabel(destination.name);
 
       try {
+        let originLat = userLocation.latitude;
+        let originLon = userLocation.longitude;
+
+        // Pastikan menggunakan titik GPS perangkat terbaru sebelum menghitung rute
+        try {
+          const { status } = await Location.getForegroundPermissionsAsync();
+          if (status === 'granted') {
+            const freshLoc = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.High,
+            });
+            originLat = freshLoc.coords.latitude;
+            originLon = freshLoc.coords.longitude;
+            setUserLocation({ latitude: originLat, longitude: originLon });
+            void backgroundMobilityTracker.recordGpsCoordinate(
+              originLat,
+              originLon,
+              freshLoc.coords.accuracy ?? undefined
+            );
+          }
+        } catch {
+          // Gunakan userLocation terakhir bila GPS timeout
+        }
+
         const route = await navigationService.calculateRoute(
-          { latitude: userLocation.latitude, longitude: userLocation.longitude },
-          { latitude: destination.lat, longitude: destination.lon }
+          { latitude: originLat, longitude: originLon },
+          { latitude: destination.lat, longitude: destination.lon },
+          { avoid_tolls: true }
         );
 
         if (!route || !Array.isArray(route.coordinates) || route.coordinates.length < 2) {
@@ -300,6 +327,11 @@ export default function UniversalNavigationScreen() {
               longitude: loc.coords.longitude,
             };
             setUserLocation(currentPos);
+            void backgroundMobilityTracker.recordGpsCoordinate(
+              loc.coords.latitude,
+              loc.coords.longitude,
+              loc.coords.accuracy ?? undefined
+            );
 
             navigationStore.updatePosition({
               latitude: loc.coords.latitude,

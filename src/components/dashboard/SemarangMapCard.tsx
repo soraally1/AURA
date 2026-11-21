@@ -72,6 +72,7 @@ export const SemarangMapCard: React.FC<SemarangMapCardProps> = ({
   onSearchPress,
   onMapPress,
   onBannerPress,
+  onProfilePress,
   userLocation,
   nearbyZones = [],
   isLoading = false,
@@ -329,16 +330,18 @@ export const SemarangMapCard: React.FC<SemarangMapCardProps> = ({
         pointerEvents="none"
       />
 
-      {/* 2. TOP FLOATING SEARCH BAR: "Temukan lokasi anda..." */}
+      {/* 2. TOP FLOATING SEARCH BAR & ACCOUNT/LOGOUT BUTTON */}
       <View style={[styles.topSearchBarOverlay, { top: topBarTop }]}>
         <Pressable
-          style={styles.searchBarBox}
+          style={[styles.searchBarBox, { flex: 1 }]}
           onPress={handleOpenMap}
           accessibilityRole="button"
           accessibilityLabel="Temukan lokasi anda"
         >
-          <Ionicons name="search" size={21} color="#2563EB" style={{ marginRight: 10 }} />
-          <Text style={styles.searchPlaceholderText}>Temukan lokasi anda...</Text>
+          <Ionicons name="search" size={20} color="#2563EB" style={{ marginRight: 8 }} />
+          <Text style={styles.searchPlaceholderText} numberOfLines={1}>
+            Temukan lokasi anda...
+          </Text>
           {isLoading ? (
             <ActivityIndicator size="small" color="#2563EB" style={{ marginLeft: 'auto' }} />
           ) : (
@@ -350,6 +353,18 @@ export const SemarangMapCard: React.FC<SemarangMapCardProps> = ({
             </View>
           )}
         </Pressable>
+
+        {onProfilePress ? (
+          <Pressable
+            onPress={onProfilePress}
+            style={styles.profileCircleBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Akun dan Logout"
+            hitSlop={6}
+          >
+            <Ionicons name="person-outline" size={20} color="#2563EB" />
+          </Pressable>
+        ) : null}
       </View>
 
       {/* 3. MIDDLE TAP OVERLAY TO OPEN FULLSCREEN MAP */}
@@ -439,6 +454,24 @@ const styles = StyleSheet.create({
     left: 14,
     right: 14,
     zIndex: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  profileCircleBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.8,
+    borderColor: '#3B82F6',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 3,
   },
   searchBarBox: {
     backgroundColor: '#FFFFFF',

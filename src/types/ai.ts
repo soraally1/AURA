@@ -214,19 +214,54 @@ export interface ScinMetadataResponse {
 }
 
 /**
- * 3. Pollution 1-Week Health Impact AI (Level Oksigen, Suhu Badan, Kulit, Dehidrasi, Rekomendasi)
+ * 3. Pollution & Activity Health Impact AI
+ *    (Oksigenasi & Dosis Hirup, Beban Termal Tubuh / Heat Index, Barier Kulit, Defisit Cairan, Risiko Penyakit & Rekomendasi)
  */
 export interface PollutionHealthIndicator {
   value: string;
   status: string;
   description?: string;
+  sub_label?: string;
+  score_pct?: number;
+  severity?: 'optimal' | 'mild' | 'moderate' | 'high';
+  analogy_note?: string;
+  formula_basis?: string;
+}
+
+export interface ActivityDiseaseRisk {
+  id: string;
+  name: string;
+  category: 'Respirasi' | 'Mukosa & Alergi' | 'Termoregulasi' | 'Dermatologi';
+  risk_pct: number;
+  risk_level: 'Rendah' | 'Sedang' | 'Tinggi';
+  mechanism: string;
+  early_symptoms: string[];
+  prevention_tip: string;
+}
+
+export interface EnvironmentalTelemetrySnapshot {
+  ambient_temp_c: number;
+  relative_humidity_pct: number;
+  heat_index_c: number;
+  thermal_delta_c: number;
+  uv_index: number;
+  wind_speed_kmh: number;
+  outdoor_aqi: number;
+  pm25_ugm3: number;
+  pm10_ugm3: number;
+  inhaled_air_liters: number;
+  inhaled_pm25_ug: number;
+  estimated_sweat_loss_ml: number;
+  recommended_water_glasses: number;
 }
 
 export interface PollutionRecommendation {
   id: string;
   title: string;
   description: string;
-  icon_type: 'mask' | 'water' | 'mobility' | string;
+  icon_type: 'mask' | 'water' | 'mobility' | 'skin' | string;
+  priority?: 'Utama' | 'Tinggi' | 'Rutin';
+  metric_badge?: string;
 }
 
 export interface PollutionExposureStats {
@@ -239,11 +274,43 @@ export interface PollutionExposureStats {
   worst_area_aqi?: number;
 }
 
+export interface ActivityRouteCoordinate {
+  latitude: number;
+  longitude: number;
+  aqi: number;
+  pm25: number;
+  timestamp?: string;
+  label?: string;
+}
+
+export interface ActivityRouteProfile {
+  coordinates: ActivityRouteCoordinate[];
+  distance_km: number;
+  duration_minutes: number;
+  avg_speed_kmh: number;
+  start_label: string;
+  end_label: string;
+  peak_label: string;
+  peak_aqi: number;
+  exposure_series: number[];
+  source: 'live_tracking' | 'daily_history' | 'gps_road_corridor';
+}
+
 export interface PollutionHealthAnalysisData {
   oxygen_level: PollutionHealthIndicator;
+  /**
+   * Analogi Biometrik Beban Termal Tubuh (Heat Index & Akumulasi Kalor Aktivitas).
+   * Disimpan juga pada key `body_temperature` untuk kompatibilitas mundur.
+   */
   body_temperature: PollutionHealthIndicator;
+  thermal_stress?: PollutionHealthIndicator;
   skin_condition: PollutionHealthIndicator;
   dehydration_level: PollutionHealthIndicator;
+  telemetry?: EnvironmentalTelemetrySnapshot;
+  activity_route?: ActivityRouteProfile;
+  disease_risks?: ActivityDiseaseRisk[];
+  clinical_findings?: string[];
+  methodology_explanation?: string;
   recommendations: PollutionRecommendation[];
   general_advice?: string;
   doctor_advice?: string;

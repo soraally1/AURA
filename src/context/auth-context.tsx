@@ -9,17 +9,31 @@ import React, {
 import { useRouter } from 'expo-router';
 import { authApi, setOnSessionExpired } from '@/services/api';
 import { TokenStorage } from '@/services/storage';
-import { User, AuthResponseData, RegisterPayload, UpdateProfilePayload } from '@/types/auth';
+import {
+  authSessionService,
+  AuthCheckOptions,
+  AuthCheckReason,
+  AuthCheckResult,
+} from '@/services/authSessionService';
+import {
+  User,
+  AuthResponseData,
+  RegisterPayload,
+  UpdateProfilePayload,
+  isProfileComplete,
+} from '@/types/auth';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isProfileCompleted: boolean;
+  authStatus: AuthCheckReason | null;
   login: (email: string, password: string) => Promise<AuthResponseData>;
   register: (payload: RegisterPayload) => Promise<AuthResponseData>;
   updateProfile: (payload: UpdateProfilePayload) => Promise<User>;
   logout: () => Promise<void>;
-  checkAuth: () => Promise<void>;
+  checkAuth: (options?: AuthCheckOptions) => Promise<AuthCheckResult>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,60 +42,43 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [authStatus, setAuthStatus] = useState<AuthCheckReason | null>(null);
 
-  const checkAuth = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const token = await TokenStorage.getIdToken();
-      if (!token) {
-        setUser(null);
-        return;
-      }
+  const checkAuth = useCallback(
+    async (options?: AuthCheckOptions): Promise<AuthCheckResult> => {
+      try {
+        setIsLoading(true);
 
-      // 1. Cek profil cache lokal terlebih dahulu (agar instan & mendukung mode offline)
-      const cached = await TokenStorage.getUserProfile();
-      if (cached) {
-        setUser(cached);
-      }
-
-      // 2. Verifikasi sesi ke backend dengan batas waktu maksimal 3.5 detik
-      // Mencegah aplikasi stuck loading di splash jika koneksi lambat atau offline
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('AUTH_TIMEOUT')), 3500)
-      );
-
-      const profile = (await Promise.race([
-        authApi.getMe(),
-        timeoutPromise,
-      ])) as User;
-
-      if (profile) {
-        setUser(profile);
-        await TokenStorage.setUserProfile(profile);
-      }
-    } catch (err: any) {
-      console.warn('[AuthProvider] Session validation note:', err?.message || err);
-      const isUnauthorized =
-        err?.response?.status === 401 || err?.response?.status === 403;
-
-      if (isUnauthorized) {
-        // Hanya hapus token jika server secara eksplisit menolak kredensial
-        await TokenStorage.clearTokens();
-        setUser(null);
-      } else {
-        // Jika offline, timeout, atau gangguan jaringan:
-        // Tetap pertahankan sesi lokal dari cache jika ada
-        const cached = await TokenStorage.getUserProfile();
-        if (cached) {
-          setUser(cached);
-        } else {
-          setUser(null);
+        // Instant optimistic hydration from local cache when a stored session exists
+        const hasSession = await authSessionService.hasStoredSession();
+        if (hasSession) {
+          const cached = await TokenStorage.getUserProfile();
+          if (cached) {
+            setUser(cached);
+          }
         }
+
+        const result = await authSessionService.checkAuthStatus(options);
+        setUser(result.user);
+        setAuthStatus(result.reason);
+        return result;
+      } catch (err) {
+        console.warn('[AuthProvider] Unexpected session check error:', err);
+        setUser(null);
+        setAuthStatus('unauthenticated');
+        return {
+          isLoggedIn: false,
+          user: null,
+          needsProfileCompletion: false,
+          reason: 'unauthenticated',
+          tokenExpiresAt: null,
+        };
+      } finally {
+        setIsLoading(false);
       }
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+    },
+    []
+  );
 
   useEffect(() => {
     checkAuth();
@@ -89,23 +86,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Register callback for session expiration from axios interceptor
     setOnSessionExpired(() => {
       setUser(null);
+      setAuthStatus('revoked');
       router.replace('/');
     });
   }, [checkAuth, router]);
 
   const login = async (email: string, password: string): Promise<AuthResponseData> => {
-    const data = await authApi.login({ email, password });
+    const data = await authApi.login({
+      email: email.trim().toLowerCase(),
+      password,
+    });
     await TokenStorage.saveTokens(data.tokens);
     await TokenStorage.setUserProfile(data.user);
     setUser(data.user);
+    setAuthStatus('valid_token');
     return data;
   };
 
   const register = async (payload: RegisterPayload): Promise<AuthResponseData> => {
-    const data = await authApi.register(payload);
+    const data = await authApi.register({
+      ...payload,
+      email: payload.email.trim().toLowerCase(),
+    });
     await TokenStorage.saveTokens(data.tokens);
     await TokenStorage.setUserProfile(data.user);
     setUser(data.user);
+    setAuthStatus('valid_token');
     return data;
   };
 
@@ -123,6 +129,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       await TokenStorage.clearTokens();
       setUser(null);
+      setAuthStatus('unauthenticated');
       router.replace('/');
     }
   };
@@ -131,6 +138,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     user,
     isLoading,
     isAuthenticated: !!user,
+    isProfileCompleted: isProfileComplete(user),
+    authStatus,
     login,
     register,
     updateProfile,

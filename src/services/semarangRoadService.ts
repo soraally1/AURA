@@ -15,8 +15,32 @@ interface RoadGraphSegment {
   c: [number, number][]; // [lon, lat][]
 }
 
-const ROAD_ENTRIES = semarangRoadsRaw as SemarangRoadEntry[];
+const EXTRA_SEMARANG_LANDMARKS: SemarangRoadEntry[] = [
+  { n: 'Kawasan POJ City (Pearl of Java)', h: 'poi', lat: -6.9472, lon: 110.3882 },
+  { n: 'Awann Costa POJ Semarang', h: 'poi', lat: -6.9445, lon: 110.3872 },
+  { n: 'Pantai Marina Semarang', h: 'poi', lat: -6.9488, lon: 110.3895 },
+  { n: 'Jalan Marina Raya', h: 'primary', lat: -6.9535, lon: 110.3908 },
+  { n: 'Puri Maerokoco & PRPP', h: 'poi', lat: -6.9568, lon: 110.3888 },
+  { n: 'Jalan Anjasmoro Raya', h: 'primary', lat: -6.9688, lon: 110.3905 },
+  { n: 'Jalan Madukoro Raya', h: 'primary', lat: -6.9625, lon: 110.3914 },
+];
+
+const ROAD_ENTRIES: SemarangRoadEntry[] = [
+  ...EXTRA_SEMARANG_LANDMARKS,
+  ...(semarangRoadsRaw as SemarangRoadEntry[]),
+];
 const ROAD_SEGMENTS = semarangRoadGraphRaw as RoadGraphSegment[];
+
+function isTollRoad(entry: { n: string; h: string }): boolean {
+  const lower = entry.n.toLowerCase();
+  return (
+    entry.h === 'motorway' ||
+    entry.h === 'motorway_link' ||
+    entry.h === 'construction' ||
+    lower.includes('jalan tol') ||
+    lower.startsWith('tol ')
+  );
+}
 
 const ROAD_IMPORTANCE: Record<string, number> = {
   motorway: 0,
@@ -79,10 +103,9 @@ export function searchSemarangRoads(
 ): SemarangRoadEntry[] {
   const q = query.trim().toLowerCase();
   if (!q) {
-    return ROAD_ENTRIES.filter((r) => (ROAD_IMPORTANCE[r.h] ?? 9) <= 2).slice(
-      0,
-      limit
-    );
+    return ROAD_ENTRIES.filter(
+      (r) => !isTollRoad(r) && (ROAD_IMPORTANCE[r.h] ?? 9) <= 3
+    ).slice(0, limit);
   }
 
   const tokens = q.split(/\s+/).filter(Boolean);
@@ -113,7 +136,7 @@ export function searchSemarangRoads(
 }
 
 /**
- * Snap coordinates to nearest Semarang road name
+ * Snap coordinates to nearest non-toll Semarang road or landmark
  */
 export function findNearestSemarangRoad(
   lat: number,
@@ -124,6 +147,7 @@ export function findNearestSemarangRoad(
 
   for (let i = 0; i < ROAD_ENTRIES.length; i++) {
     const r = ROAD_ENTRIES[i];
+    if (isTollRoad(r)) continue;
     const dLat = r.lat - lat;
     const dLon = r.lon - lon;
     const approx = dLat * dLat + dLon * dLon;
@@ -133,6 +157,46 @@ export function findNearestSemarangRoad(
     }
   }
   return best;
+}
+
+/**
+ * Finds the nearest real non-toll street segment polyline around (lat, lon)
+ */
+export function getLocalRoadSegmentCoordinates(
+  lat: number,
+  lon: number
+): { roadName: string; coordinates: [number, number][] } {
+  let bestSeg: RoadGraphSegment | null = null;
+  let bestDist = Infinity;
+
+  for (let i = 0; i < ROAD_SEGMENTS.length; i++) {
+    const seg = ROAD_SEGMENTS[i];
+    if (!seg.c || seg.c.length < 2 || isTollRoad(seg)) continue;
+    for (let k = 0; k < seg.c.length; k++) {
+      const [sLon, sLat] = seg.c[k];
+      const d = (sLat - lat) ** 2 + (sLon - lon) ** 2;
+      if (d < bestDist) {
+        bestDist = d;
+        bestSeg = seg;
+      }
+    }
+  }
+
+  if (bestSeg && bestSeg.c.length >= 2) {
+    return {
+      roadName: bestSeg.n,
+      coordinates: bestSeg.c,
+    };
+  }
+
+  const nearest = findNearestSemarangRoad(lat, lon);
+  return {
+    roadName: nearest?.n || 'Jalan Lokal Semarang',
+    coordinates: [
+      [lon, lat],
+      [nearest?.lon ?? lon + 0.0012, nearest?.lat ?? lat + 0.0012],
+    ],
+  };
 }
 
 // ─── Lazy A* Graph built from semarang.gpkg arterial/collector segments ─────
@@ -175,6 +239,7 @@ function getSemarangGraph(): GraphIndex {
 
   for (let s = 0; s < ROAD_SEGMENTS.length; s++) {
     const seg = ROAD_SEGMENTS[s];
+    if (isTollRoad(seg)) continue;
     const coords = seg.c;
     if (!coords || coords.length < 2) continue;
 

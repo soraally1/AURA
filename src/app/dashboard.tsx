@@ -2,7 +2,6 @@ import { SemarangMapCard } from '@/components/dashboard/SemarangMapCard';
 import { FullscreenSemarangMapModal } from '@/components/dashboard/FullscreenSemarangMapModal';
 import { AuraColors } from '@/constants/aura-theme';
 import { useAuth } from '@/context/auth-context';
-import { authApi } from '@/services/api';
 import { zonesApi } from '@/services/zonesApi';
 import { mapScraperService } from '@/services/mapScraperService';
 import { locationService } from '@/services/locationService';
@@ -26,7 +25,14 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, {
+  Circle,
+  Defs,
+  LinearGradient as SvgLinearGradient,
+  Path,
+  Rect,
+  Stop,
+} from 'react-native-svg';
 import { mobilityService } from '@/services/mobilityService';
 import { backgroundMobilityTracker } from '@/services/backgroundMobilityTracker';
 import { ExposureStats } from '@/types/mobility';
@@ -61,12 +67,11 @@ function getImpactRingColors(level: ImpactLevel): [string, string, string] {
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const { user, logout, checkAuth } = useAuth();
+  const { user, logout } = useAuth();
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [apiResponseInfo, setApiResponseInfo] = useState<string | null>(null);
 
   // Dynamic user GPS location & nearby hotspots
   const [userLocation, setUserLocation] = useState<{
@@ -205,22 +210,6 @@ export default function DashboardScreen() {
     loadDashboardData();
   }, [loadDashboardData]);
 
-  const handleTestGetMe = async () => {
-    try {
-      setIsRefreshing(true);
-      setApiResponseInfo(null);
-      const profile = await authApi.getMe();
-      setApiResponseInfo(
-        `Profil berhasil diverifikasi via GET /api/auth/me:\n${JSON.stringify(profile, null, 2)}`
-      );
-      await checkAuth();
-    } catch (err: any) {
-      Alert.alert('Gagal', err?.message || 'Gagal memanggil /api/auth/me');
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
   const handleLogout = async () => {
     Alert.alert('Konfirmasi Logout', 'Apakah Anda yakin ingin keluar dari akun Aura?', [
       { text: 'Batal', style: 'cancel' },
@@ -286,7 +275,7 @@ export default function DashboardScreen() {
   const navigateToPollutionMap = () => {
     setTransitionSplash({
       visible: true,
-      message: 'Membuka Peta & Analisis Penyakit Jateng...',
+      message: 'Membuka Peta Analisis Penyakit...',
     });
     setTimeout(() => {
       router.push({
@@ -445,7 +434,7 @@ export default function DashboardScreen() {
             </Text>
           </Pressable>
 
-          {/* 3. Analisis Penyakit Jateng (Peta 3D & Open Data Dinkes) */}
+          {/* 3. Peta Analisis Penyakit (Peta 3D & Open Data Dinkes) */}
           <Pressable
             onPress={navigateToPollutionMap}
             style={({ pressed }) => [
@@ -457,7 +446,7 @@ export default function DashboardScreen() {
               },
             ]}
             accessibilityRole="button"
-            accessibilityLabel="Analisis Penyakit Jateng"
+            accessibilityLabel="Peta Analisis Penyakit"
             hitSlop={6}
           >
             <Image
@@ -475,7 +464,7 @@ export default function DashboardScreen() {
                 lineHeight: 14,
               }}
             >
-              Analisis Penyakit{'\n'}Jawa Tengah
+              Peta Analisis{'\n'}Penyakit
             </Text>
           </Pressable>
 
@@ -494,36 +483,55 @@ export default function DashboardScreen() {
             accessibilityLabel="Prakiraan 7 Hari"
             hitSlop={6}
           >
-            <View
-              style={{
-                width: 76,
-                height: 76,
-                borderRadius: 22,
-                backgroundColor: '#E0F2FE',
-                borderWidth: 1.5,
-                borderColor: '#BAE6FD',
-                alignItems: 'center',
-                justifyContent: 'center',
-                shadowColor: '#0284C7',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.12,
-                shadowRadius: 4,
-                elevation: 2,
-              }}
-            >
-              <LinearGradient
-                colors={['#38BDF8', '#0284C7']}
-                style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 16,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Ionicons name="calendar" size={26} color="#FFFFFF" />
-              </LinearGradient>
-            </View>
+            <Svg width={76} height={76} viewBox="0 0 76 76" fill="none">
+              <Defs>
+                <SvgLinearGradient id="f7Bg" x1="10" y1="4" x2="66" y2="74" gradientUnits="userSpaceOnUse">
+                  <Stop offset="0" stopColor="#EFF8FF" />
+                  <Stop offset="0.52" stopColor="#93D5FB" />
+                  <Stop offset="1" stopColor="#3B82F6" />
+                </SvgLinearGradient>
+              </Defs>
+              {/* Squircle backdrop matching Group 723/724/725 */}
+              <Rect x="0" y="0" width="76" height="76" rx="20" fill="url(#f7Bg)" />
+              {/* Decorative top-right ring arc */}
+              <Circle
+                cx="66"
+                cy="12"
+                r="22"
+                stroke="#60A5FA"
+                strokeOpacity="0.45"
+                strokeWidth="7"
+              />
+              {/* Warm Sun */}
+              <Circle cx="26" cy="24" r="10.5" fill="#FDE047" />
+              <Circle cx="26" cy="24" r="7.5" fill="#FACC15" />
+              {/* Soft White Weather Cloud */}
+              <Path
+                d="M17 42.5C13.6 42.5 11 39.9 11 36.7C11 33.8 13.1 31.4 15.9 30.9C16.9 26.6 20.8 23.5 25.3 23.5C29.4 23.5 33 26.1 34.3 29.8C35.2 29.3 36.2 29 37.3 29C40.9 29 43.8 31.9 43.8 35.5C45.3 36.4 46.2 38 46.2 39.8C46.2 42.4 44.1 44.5 41.5 44.5H17V42.5Z"
+                fill="#FFFFFF"
+              />
+              {/* Tilted Mini 7-Day Forecast Calendar Badge (bottom-right) */}
+              <Rect
+                x="35"
+                y="37"
+                width="31"
+                height="29"
+                rx="7.5"
+                fill="#FFFFFF"
+                stroke="#BFDBFE"
+                strokeWidth="1.2"
+              />
+              <Rect x="35" y="37" width="31" height="9" rx="4.5" fill="#1E40AF" />
+              <Rect x="41" y="34" width="3.2" height="6" rx="1.6" fill="#38BDF8" />
+              <Rect x="57" y="34" width="3.2" height="6" rx="1.6" fill="#38BDF8" />
+              {/* 7-day status pills inside calendar */}
+              <Rect x="39.5" y="50" width="6" height="4.5" rx="1.5" fill="#10B981" />
+              <Rect x="47.5" y="50" width="6" height="4.5" rx="1.5" fill="#38BDF8" />
+              <Rect x="55.5" y="50" width="6" height="4.5" rx="1.5" fill="#F59E0B" />
+              <Rect x="39.5" y="57.5" width="6" height="4.5" rx="1.5" fill="#38BDF8" />
+              <Rect x="47.5" y="57.5" width="6" height="4.5" rx="1.5" fill="#10B981" />
+              <Rect x="55.5" y="57.5" width="6" height="4.5" rx="1.5" fill="#60A5FA" />
+            </Svg>
             <Text
               style={{
                 color: '#1E293B',
@@ -889,164 +897,6 @@ export default function DashboardScreen() {
               </View>
             </LinearGradient>
           </Pressable>
-
-          {/* Card 4: Dedicated Prakiraan 7 Hari */}
-          <Pressable
-            onPress={navigateTo7DayForecast}
-            style={{
-              width: 175,
-              height: 245,
-              borderRadius: 28,
-              overflow: 'hidden',
-              backgroundColor: '#0284C7',
-              shadowColor: '#0284C7',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.25,
-              shadowRadius: 10,
-              elevation: 5,
-            }}
-          >
-            <LinearGradient
-              colors={['#0284C7', '#0369A1', '#0C4A6E']}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
-              style={{ width: '100%', height: '100%', padding: 16, position: 'relative', justifyContent: 'space-between' }}
-            >
-              {/* Header Badge */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 }}>
-                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '800' }}>7 HARI</Text>
-                </View>
-                <Ionicons name="sparkles" size={14} color="#FDE047" />
-              </View>
-
-              {/* Center Content */}
-              <View style={{ alignItems: 'center', paddingVertical: 10 }}>
-                <Ionicons name="calendar-outline" size={38} color="#FFFFFF" style={{ marginBottom: 6 }} />
-                <Text
-                  style={{
-                    color: '#FFFFFF',
-                    fontSize: 17,
-                    fontWeight: '900',
-                    textAlign: 'center',
-                    textShadowColor: 'rgba(0,0,0,0.2)',
-                    textShadowOffset: { width: 0, height: 1 },
-                    textShadowRadius: 3,
-                  }}
-                >
-                  Prakiraan 7 Hari
-                </Text>
-                <Text
-                  style={{
-                    color: 'rgba(255,255,255,0.85)',
-                    fontSize: 11,
-                    fontWeight: '600',
-                    textAlign: 'center',
-                    marginTop: 3,
-                  }}
-                >
-                  Sensor Cuaca & Polusi
-                </Text>
-              </View>
-
-              {/* Bottom Action Pill */}
-              <View
-                style={{
-                  backgroundColor: 'rgba(255,255,255,0.25)',
-                  borderRadius: 20,
-                  paddingVertical: 6,
-                  paddingHorizontal: 12,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700', marginRight: 4 }}>
-                  Lihat Detail
-                </Text>
-                <Ionicons name="arrow-forward" size={12} color="#FFFFFF" />
-              </View>
-            </LinearGradient>
-          </Pressable>
-
-          {/* Card 5: Dedicated Peta Analisis Penyakit Jateng */}
-          <Pressable
-            onPress={navigateToPollutionMap}
-            style={{
-              width: 175,
-              height: 245,
-              borderRadius: 28,
-              overflow: 'hidden',
-              backgroundColor: '#059669',
-              shadowColor: '#059669',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.25,
-              shadowRadius: 10,
-              elevation: 5,
-            }}
-          >
-            <LinearGradient
-              colors={['#059669', '#047857', '#064E3B']}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
-              style={{ width: '100%', height: '100%', padding: 16, position: 'relative', justifyContent: 'space-between' }}
-            >
-              {/* Header Badge */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 }}>
-                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '800' }}>PETA 3D</Text>
-                </View>
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#4ADE80' }} />
-              </View>
-
-              {/* Center Content */}
-              <View style={{ alignItems: 'center', paddingVertical: 10 }}>
-                <Ionicons name="map-outline" size={38} color="#FFFFFF" style={{ marginBottom: 6 }} />
-                <Text
-                  style={{
-                    color: '#FFFFFF',
-                    fontSize: 16,
-                    fontWeight: '900',
-                    textAlign: 'center',
-                    textShadowColor: 'rgba(0,0,0,0.2)',
-                    textShadowOffset: { width: 0, height: 1 },
-                    textShadowRadius: 3,
-                  }}
-                >
-                  Analisis Penyakit
-                </Text>
-                <Text
-                  style={{
-                    color: 'rgba(255,255,255,0.85)',
-                    fontSize: 11,
-                    fontWeight: '600',
-                    textAlign: 'center',
-                    marginTop: 3,
-                  }}
-                >
-                  35 Daerah Jawa Tengah
-                </Text>
-              </View>
-
-              {/* Bottom Action Pill */}
-              <View
-                style={{
-                  backgroundColor: 'rgba(255,255,255,0.25)',
-                  borderRadius: 20,
-                  paddingVertical: 6,
-                  paddingHorizontal: 12,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700', marginRight: 4 }}>
-                  Buka Peta
-                </Text>
-                <Ionicons name="arrow-forward" size={12} color="#FFFFFF" />
-              </View>
-            </LinearGradient>
-          </Pressable>
         </ScrollView>
 
         {/* 4. SOLUTION / MEDICINE BANNER (Obat 1.png) -> Kebutuhan Harian */}
@@ -1195,9 +1045,83 @@ export default function DashboardScreen() {
             </View>
           </View>
         </View>
+
+        {/* 6. ACCOUNT & LOGOUT CARD ON DASHBOARD */}
+        <View
+          style={{
+            marginHorizontal: 16,
+            marginTop: 22,
+            backgroundColor: '#F8FAFC',
+            borderRadius: 18,
+            padding: 14,
+            borderWidth: 1,
+            borderColor: '#E2E8F0',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+          }}
+        >
+          <Pressable
+            onPress={() => setShowAccountModal(true)}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+          >
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: '#EFF6FF',
+                borderWidth: 1,
+                borderColor: '#BFDBFE',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Ionicons name="person" size={18} color="#2563EB" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text numberOfLines={1} style={{ fontSize: 13.5, fontWeight: '800', color: '#0F172A' }}>
+                {user?.name || 'Pengguna AURA'}
+              </Text>
+              <Text numberOfLines={1} style={{ fontSize: 11.5, color: '#64748B', marginTop: 1 }}>
+                {user?.email || 'Ketuk untuk detail profil'}
+              </Text>
+            </View>
+          </Pressable>
+
+          <Pressable
+            onPress={handleLogout}
+            disabled={isLoggingOut}
+            accessibilityRole="button"
+            accessibilityLabel="Logout"
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              backgroundColor: pressed ? '#FFE4E6' : '#FFF1F2',
+              borderWidth: 1,
+              borderColor: '#FECDD3',
+              paddingHorizontal: 14,
+              paddingVertical: 9,
+              borderRadius: 999,
+            })}
+          >
+            {isLoggingOut ? (
+              <ActivityIndicator size="small" color="#E11D48" />
+            ) : (
+              <>
+                <Ionicons name="log-out-outline" size={16} color="#E11D48" />
+                <Text style={{ color: '#E11D48', fontSize: 12.5, fontWeight: '800' }}>
+                  Logout
+                </Text>
+              </>
+            )}
+          </Pressable>
+        </View>
       </ScrollView>
 
-      {/* ACCOUNT & DEBUG PROFILE MODAL */}
+      {/* ACCOUNT & PROFILE MODAL */}
       <Modal
         visible={showAccountModal}
         animationType="slide"
@@ -1280,32 +1204,6 @@ export default function DashboardScreen() {
                   Ubah Profil Tentang Kamu
                 </Text>
               </Pressable>
-
-              {/* Action: Test Backend API */}
-              <Pressable
-                onPress={handleTestGetMe}
-                disabled={isRefreshing}
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: '#E2E8F0', paddingVertical: 12, borderRadius: 12, marginTop: 10 }}
-              >
-                {isRefreshing ? (
-                  <ActivityIndicator size="small" color={AuraColors.primary} />
-                ) : (
-                  <>
-                    <Ionicons name="refresh-circle" size={16} color="#475569" />
-                    <Text style={{ color: '#334155', fontSize: 12, fontWeight: '700' }}>
-                      Uji GET /api/auth/me
-                    </Text>
-                  </>
-                )}
-              </Pressable>
-
-              {apiResponseInfo ? (
-                <View style={{ marginTop: 12, padding: 12, backgroundColor: '#0F172A', borderRadius: 12 }}>
-                  <Text style={{ color: '#34D399', fontFamily: 'monospace', fontSize: 10 }}>
-                    {apiResponseInfo}
-                  </Text>
-                </View>
-              ) : null}
 
               {/* Action: Logout */}
               <Pressable

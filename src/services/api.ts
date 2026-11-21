@@ -1,4 +1,4 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosError, InternalAxiosRequestConfig, isAxiosError } from 'axios';
 import { TokenStorage } from './storage';
 import {
   ApiResponse,
@@ -39,6 +39,19 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Endpoints that should never trigger auto-refresh or session-expired redirect on 401
+const AUTH_PUBLIC_OR_SESSION_PATHS = [
+  '/api/auth/login',
+  '/api/auth/register',
+  '/api/auth/refresh',
+  '/api/auth/logout',
+];
+
+const isSkipRefreshRequest = (url?: string): boolean => {
+  if (!url) return false;
+  return AUTH_PUBLIC_OR_SESSION_PATHS.some((path) => url.includes(path));
+};
+
 // 2. Response Interceptor: Silent Token Refresh on 401
 api.interceptors.response.use(
   (response) => response,
@@ -47,22 +60,24 @@ api.interceptors.response.use(
       _retry?: boolean;
     };
 
-    // If 401 Unauthorized and not already retried
+    // Never intercept 401 on login/register/refresh/logout endpoints:
+    // Wrong password on login must bubble directly to the Sign In form!
     if (
       error.response?.status === 401 &&
       originalRequest &&
-      !originalRequest._retry
+      !originalRequest._retry &&
+      !isSkipRefreshRequest(originalRequest.url)
     ) {
       originalRequest._retry = true;
       const refreshToken = await TokenStorage.getRefreshToken();
 
       if (refreshToken) {
         try {
-          // Direct axios call with strict 4s timeout to prevent hanging on offline/unreachable network
+          // Allow up to 7s for cold-start Vercel + Firebase token exchange
           const res = await axios.post<ApiResponse<{ tokens: AuthTokens }>>(
             `${BASE_URL}/api/auth/refresh`,
             { refreshToken },
-            { headers: { 'Content-Type': 'application/json' }, timeout: 4000 }
+            { headers: { 'Content-Type': 'application/json' }, timeout: 7000 }
           );
 
           if (res.data.success && res.data.data?.tokens?.idToken) {
@@ -80,10 +95,18 @@ api.interceptors.response.use(
             return api(originalRequest);
           }
         } catch (refreshErr) {
-          console.warn('[API] Refresh token expired or revoked:', refreshErr);
-          await TokenStorage.clearTokens();
-          if (onSessionExpiredCallback) {
-            onSessionExpiredCallback();
+          const refreshStatus = isAxiosError(refreshErr)
+            ? refreshErr.response?.status
+            : undefined;
+          console.warn('[API] Token refresh failed:', refreshStatus ?? 'network/timeout', refreshErr);
+
+          // Only clear stored session when server explicitly rejects/revokes the refresh token (401/403).
+          // Preserve cached session if user is simply offline or request timed out.
+          if (refreshStatus === 401 || refreshStatus === 403) {
+            await TokenStorage.clearTokens();
+            if (onSessionExpiredCallback) {
+              onSessionExpiredCallback();
+            }
           }
         }
       } else {
@@ -141,7 +164,10 @@ export const authApi = {
   }): Promise<AuthResponseData> => {
     const res = await api.post<ApiResponse<AuthResponseData>>(
       '/api/auth/login',
-      payload
+      {
+        email: payload.email.trim().toLowerCase(),
+        password: payload.password,
+      }
     );
     if (!res.data.success) {
       throw res.data;
@@ -172,7 +198,7 @@ export const authApi = {
     const res = await axios.post<ApiResponse<{ tokens: AuthTokens }>>(
       `${BASE_URL}/api/auth/refresh`,
       { refreshToken },
-      { timeout: 5000 }
+      { timeout: 7000 }
     );
     if (!res.data.success) {
       throw res.data;
@@ -186,9 +212,9 @@ export const authApi = {
    */
   logout: async (): Promise<void> => {
     try {
-      await api.post('/api/auth/logout');
+      await api.post('/api/auth/logout', undefined, { timeout: 3000 });
     } catch (err) {
-      // Still proceed with local token deletion even if server is unreachable
+      // Still proceed with local token deletion even if server is unreachable or token already expired
       console.warn('[API] Logout request error (proceeding with local cleanup):', err);
     } finally {
       await TokenStorage.clearTokens();

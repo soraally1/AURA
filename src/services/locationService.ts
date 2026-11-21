@@ -1,5 +1,7 @@
 import * as Location from 'expo-location';
 import { terrainService, LandscapeType } from './terrainService';
+import { backgroundMobilityTracker } from './backgroundMobilityTracker';
+import { findNearestSemarangRoad } from './semarangRoadService';
 
 export interface UserGpsLocationResult {
   name: string;
@@ -28,10 +30,21 @@ export const locationService = {
       }
 
       const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
+        accuracy: Location.Accuracy.High,
       });
 
-      let resolvedName = 'Lokasi GPS Saya';
+      // Persist every real GPS fix into today's mobility trail automatically
+      void backgroundMobilityTracker.recordGpsCoordinate(
+        loc.coords.latitude,
+        loc.coords.longitude,
+        loc.coords.accuracy ?? undefined
+      );
+
+      const nearestLandmark = findNearestSemarangRoad(
+        loc.coords.latitude,
+        loc.coords.longitude
+      );
+      let resolvedName = nearestLandmark?.n || 'Lokasi GPS Saya';
       try {
         const rev = await Location.reverseGeocodeAsync({
           latitude: loc.coords.latitude,
@@ -40,15 +53,17 @@ export const locationService = {
         if (rev && rev.length > 0) {
           const item = rev[0];
           const parts = [
-            item.district || item.subregion || item.street,
-            item.city || item.region,
+            nearestLandmark?.n || item.street || item.district || item.subregion,
+            item.district || item.city || item.region,
           ].filter(Boolean);
           if (parts.length > 0) {
-            resolvedName = parts.join(', ');
+            resolvedName = Array.from(new Set(parts)).join(', ');
           }
         }
-      } catch (revErr) {
-        resolvedName = `GPS (${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)})`;
+      } catch {
+        resolvedName =
+          nearestLandmark?.n ||
+          `GPS (${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)})`;
       }
 
       // Detect real-time terrain from GPS & elevation

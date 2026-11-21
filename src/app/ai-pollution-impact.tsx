@@ -16,17 +16,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { aiService } from '@/services/aiService';
-import { PollutionHealthAnalysisData, PollutionHealthAnalysisContext } from '@/types/ai';
+import {
+  PollutionHealthAnalysisData,
+  PollutionHealthAnalysisContext,
+} from '@/types/ai';
 import { PageTransitionSplash } from '@/components/splash/AuraCloudSplash';
+import { StravaActivitySummaryCard } from '@/components/activity/StravaActivitySummaryCard';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_GAP = 12;
 const CARD_WIDTH = (SCREEN_WIDTH - 40 - GRID_GAP) / 2;
 
-// ─── Custom Pixel-Perfect SVG Icons ──────────────────────────────────────────
+// ─── Clean Visual SVG Icons ─────────────────────────────────────────────────
 
-/** Icon Oksigen (Dua busur melingkar: biru dan kuning/hijau) */
-function OxygenIcon({ size = 26 }: { size?: number }) {
+function OxygenIcon({ size = 24 }: { size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
       <Path
@@ -46,7 +49,6 @@ function OxygenIcon({ size = 26 }: { size?: number }) {
   );
 }
 
-/** Icon Termometer Suhu */
 function ThermometerIcon({ size = 22 }: { size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -59,7 +61,6 @@ function ThermometerIcon({ size = 22 }: { size?: number }) {
       />
       <Path d="M12 8V14" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" />
       <Circle cx="12" cy="19" r="2" fill="#2563EB" />
-      {/* Indicator lines on right */}
       <Path d="M18 6H20" stroke="#60A5FA" strokeWidth="1.5" strokeLinecap="round" />
       <Path d="M18 9H21" stroke="#60A5FA" strokeWidth="1.5" strokeLinecap="round" />
       <Path d="M18 12H20" stroke="#60A5FA" strokeWidth="1.5" strokeLinecap="round" />
@@ -67,8 +68,7 @@ function ThermometerIcon({ size = 22 }: { size?: number }) {
   );
 }
 
-/** Icon Plester Kulit / Bandage */
-function BandageIcon({ size = 24 }: { size?: number }) {
+function BandageIcon({ size = 22 }: { size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
       <Rect
@@ -97,8 +97,7 @@ function BandageIcon({ size = 24 }: { size?: number }) {
   );
 }
 
-/** Icon Gelas Air Dehidrasi */
-function WaterGlassIcon({ size = 24 }: { size?: number }) {
+function WaterGlassIcon({ size = 22 }: { size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
       <Path
@@ -107,12 +106,10 @@ function WaterGlassIcon({ size = 24 }: { size?: number }) {
         strokeWidth="2"
         strokeLinejoin="round"
       />
-      {/* Water Fill */}
       <Path
         d="M9.8 13L10.5 24.5C10.5 25.1 11 25.5 11.6 25.5H20.4C21 25.5 21.5 25.1 21.5 24.5L22.2 13C20.5 14 18 13.2 16 13C14 12.8 11.5 14 9.8 13Z"
         fill="#7DD3FC"
       />
-      {/* Ice Cubes */}
       <Rect
         x="13"
         y="15"
@@ -127,16 +124,13 @@ function WaterGlassIcon({ size = 24 }: { size?: number }) {
   );
 }
 
-/** Icon Masker Medis untuk Rekomendasi */
-function MaskIcon({ size = 26 }: { size?: number }) {
+function MaskIcon({ size = 24 }: { size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
       <Rect x="6" y="10" width="20" height="12" rx="4" fill="#38BDF8" />
-      {/* Pleat lines */}
       <Path d="M7 13.5H25" stroke="#BAE6FD" strokeWidth="1.2" />
       <Path d="M7 16.5H25" stroke="#BAE6FD" strokeWidth="1.2" />
       <Path d="M7 19.5H25" stroke="#BAE6FD" strokeWidth="1.2" />
-      {/* Ear loops */}
       <Path
         d="M6 12C3 13 3 19 6 20"
         stroke="#93C5FD"
@@ -153,30 +147,18 @@ function MaskIcon({ size = 26 }: { size?: number }) {
   );
 }
 
-/** Icon Mobil Merah untuk Rekomendasi Mobilitas */
-function RedCarIcon({ size = 26 }: { size?: number }) {
+function SunShieldIcon({ size = 22 }: { size?: number }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
-      {/* Car Roof */}
-      <Path
-        d="M10 13L12 9H20L22 13H10Z"
-        fill="#EF4444"
-      />
-      {/* Car Window */}
-      <Path
-        d="M11 12.5L12.5 9.8H19.5L21 12.5H11Z"
-        fill="#FEE2E2"
-      />
-      {/* Car Body */}
-      <Rect x="6" y="13" width="20" height="8" rx="2" fill="#DC2626" />
-      {/* Headlights */}
-      <Circle cx="8" cy="16" r="1.2" fill="#FEF08A" />
-      <Circle cx="24" cy="16" r="1.2" fill="#FEF08A" />
-      {/* Wheels */}
-      <Circle cx="10" cy="21" r="2.5" fill="#1E293B" />
-      <Circle cx="10" cy="21" r="1" fill="#94A3B8" />
-      <Circle cx="22" cy="21" r="2.5" fill="#1E293B" />
-      <Circle cx="22" cy="21" r="1" fill="#94A3B8" />
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="5" fill="#F59E0B" />
+      <Path d="M12 2V4" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" />
+      <Path d="M12 20V22" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" />
+      <Path d="M4.93 4.93L6.34 6.34" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" />
+      <Path d="M17.66 17.66L19.07 19.07" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" />
+      <Path d="M2 12H4" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" />
+      <Path d="M20 12H22" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" />
+      <Path d="M4.93 19.07L6.34 17.66" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" />
+      <Path d="M17.66 6.34L19.07 4.93" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" />
     </Svg>
   );
 }
@@ -206,37 +188,39 @@ export default function AiPollutionImpactScreen() {
   const [data, setData] = useState<PollutionHealthAnalysisData | null>(null);
   const hasRunRef = useRef(false);
 
-  // 1-Click AI Analysis Trigger from Backend
-  const runAiAnalysis = useCallback(async (isManualRetry = false) => {
-    if (!isManualRetry && hasRunRef.current) return;
-    hasRunRef.current = true;
+  const runAiAnalysis = useCallback(
+    async (isManualRetry = false) => {
+      if (!isManualRetry && hasRunRef.current) return;
+      hasRunRef.current = true;
 
-    setIsLoading(true);
-    try {
-      const context: PollutionHealthAnalysisContext = {
-        lat: lat ? parseFloat(lat) : undefined,
-        lon: lon ? parseFloat(lon) : undefined,
-        location_name: name || 'Lokasi Terpilih',
-        zone_id: zone_id,
-        average_risk_score: average_risk_score
-          ? parseFloat(average_risk_score)
-          : undefined,
-        peak_risk_day: peak_risk_day,
-        total_outdoor_minutes: outdoor_minutes
-          ? parseFloat(outdoor_minutes)
-          : undefined,
-      };
+      setIsLoading(true);
+      try {
+        const context: PollutionHealthAnalysisContext = {
+          lat: lat ? parseFloat(lat) : undefined,
+          lon: lon ? parseFloat(lon) : undefined,
+          location_name: name || 'Lokasi Terpilih',
+          zone_id: zone_id,
+          average_risk_score: average_risk_score
+            ? parseFloat(average_risk_score)
+            : undefined,
+          peak_risk_day: peak_risk_day,
+          total_outdoor_minutes: outdoor_minutes
+            ? parseFloat(outdoor_minutes)
+            : undefined,
+        };
 
-      const res = await aiService.analyzePollutionHealthImpact(context);
-      if (res && res.data) {
-        setData(res.data);
+        const res = await aiService.analyzePollutionHealthImpact(context);
+        if (res && res.data) {
+          setData(res.data);
+        }
+      } catch (err) {
+        console.warn('[AiPollutionImpact] Error running analysis:', err);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err) {
-      console.warn('[AiPollutionImpact] Error running analysis:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [lat, lon, name, zone_id, average_risk_score, peak_risk_day, outdoor_minutes]);
+    },
+    [lat, lon, name, zone_id, average_risk_score, peak_risk_day, outdoor_minutes]
+  );
 
   useEffect(() => {
     runAiAnalysis();
@@ -246,6 +230,17 @@ export default function AiPollutionImpactScreen() {
     Platform.OS === 'android'
       ? (RNStatusBar.currentHeight || 24) + 8
       : insets.top + 6;
+
+  const thermal = data?.thermal_stress || data?.body_temperature;
+  const outdoorMin = Math.round(
+    data?.activity_route?.duration_minutes ??
+      data?.stats?.total_outdoor_minutes ??
+      0
+  );
+  const ambientC = Math.round(data?.telemetry?.ambient_temp_c ?? 0);
+  const feelC = Math.round(data?.telemetry?.heat_index_c ?? ambientC);
+  const pm25Ug = data?.telemetry?.inhaled_pm25_ug ?? 0;
+  const glasses = data?.telemetry?.recommended_water_glasses ?? 0;
 
   return (
     <View style={styles.container}>
@@ -259,7 +254,7 @@ export default function AiPollutionImpactScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Top Header Row with Back Button & Tracking Harian Link */}
+        {/* Top Header Row */}
         <View style={styles.topHeaderBar}>
           <Pressable
             style={styles.backButton}
@@ -269,17 +264,6 @@ export default function AiPollutionImpactScreen() {
           >
             <Ionicons name="arrow-back" size={24} color="#0284C7" />
           </Pressable>
-
-          <Pressable
-            style={styles.trackingHeaderPill}
-            onPress={() => router.push('/daily-journey')}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityRole="button"
-            accessibilityLabel="Buka Tracking Harian"
-          >
-            <Ionicons name="map-outline" size={14} color="#059669" />
-            <Text style={styles.trackingHeaderPillText}>Tracking Harian</Text>
-          </Pressable>
         </View>
 
         {/* Title Section */}
@@ -288,7 +272,6 @@ export default function AiPollutionImpactScreen() {
           <Text style={styles.primaryTitle}>Berdasarkan Aktivitas</Text>
           <Text style={styles.heroWeeklyText}>&amp; Polusi</Text>
 
-          {/* Doctor Advisory Link */}
           <View style={styles.doctorNoticeRow}>
             <Pressable onPress={() => router.push('/ceksekarang')}>
               <Text style={styles.doctorNoticeLink}>Periksa ke dokter </Text>
@@ -300,16 +283,19 @@ export default function AiPollutionImpactScreen() {
         {isLoading ? (
           <View style={styles.loadingWrapper}>
             <ActivityIndicator size="large" color="#0284C7" />
-            <Text style={styles.loadingTitle}>Sedang Menganalisis dengan AI...</Text>
-            <Text style={styles.loadingSubtitle}>
-              Menghubungkan data paparan polusi 1 minggu ke model inferensi kesehatan
-            </Text>
           </View>
         ) : data ? (
           <>
-            {/* ─── 4-Card Grid Health Metrics (2x2) ────────────────────────── */}
+            {/* ─── Strava-Style Real Map Activity Route Flyover Card ──────── */}
+            <StravaActivitySummaryCard
+              activityRoute={data.activity_route}
+              telemetry={data.telemetry}
+              stats={data.stats}
+            />
+
+            {/* ─── 4-Card Grid (2x2) Visual & Minimal Text ───────────────── */}
             <View style={styles.gridContainer}>
-              {/* 1. Level Oksigen */}
+              {/* 1. Kualitas Hirup */}
               <LinearGradient
                 colors={['#3884F7', '#2567EC']}
                 start={{ x: 0, y: 0 }}
@@ -321,7 +307,7 @@ export default function AiPollutionImpactScreen() {
                     <Text style={styles.metricBigValue}>
                       {data.oxygen_level.value}
                     </Text>
-                    <Text numberOfLines={2} style={styles.metricSubStatus}>
+                    <Text numberOfLines={1} style={styles.metricSubStatus}>
                       {data.oxygen_level.status}
                     </Text>
                   </View>
@@ -329,31 +315,33 @@ export default function AiPollutionImpactScreen() {
                     <OxygenIcon size={24} />
                   </View>
                 </View>
-                <Text style={styles.metricBottomLabel}>Level Oksigen</Text>
+                <Text style={styles.metricBottomLabel}>Kualitas Hirup</Text>
               </LinearGradient>
 
-              {/* 2. Suhu Badan */}
-              <LinearGradient
-                colors={['#3884F7', '#2567EC']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.metricCard}
-              >
-                <View style={styles.cardTopRow}>
-                  <View style={{ flex: 1, paddingRight: 6 }}>
-                    <Text style={styles.metricBigValue}>
-                      {data.body_temperature.value}
-                    </Text>
-                    <Text numberOfLines={2} style={styles.metricSubStatus}>
-                      {data.body_temperature.status}
-                    </Text>
+              {/* 2. Suhu Terasa (Analogi Suhu & Lembap ke Tubuh) */}
+              {thermal && (
+                <LinearGradient
+                  colors={['#3884F7', '#2567EC']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.metricCard}
+                >
+                  <View style={styles.cardTopRow}>
+                    <View style={{ flex: 1, paddingRight: 6 }}>
+                      <Text style={styles.metricBigValue}>
+                        {thermal.value}
+                      </Text>
+                      <Text numberOfLines={1} style={styles.metricSubStatus}>
+                        {thermal.status}
+                      </Text>
+                    </View>
+                    <View style={styles.cardIconCircle}>
+                      <ThermometerIcon size={22} />
+                    </View>
                   </View>
-                  <View style={styles.cardIconCircle}>
-                    <ThermometerIcon size={22} />
-                  </View>
-                </View>
-                <Text style={styles.metricBottomLabel}>Suhu Badan</Text>
-              </LinearGradient>
+                  <Text style={styles.metricBottomLabel}>Suhu Terasa</Text>
+                </LinearGradient>
+              )}
 
               {/* 3. Kondisi Kulit */}
               <LinearGradient
@@ -367,7 +355,7 @@ export default function AiPollutionImpactScreen() {
                     <Text style={styles.metricMediumValue}>
                       {data.skin_condition.value}
                     </Text>
-                    <Text numberOfLines={2} style={styles.metricSubStatus}>
+                    <Text numberOfLines={1} style={styles.metricSubStatus}>
                       {data.skin_condition.status}
                     </Text>
                   </View>
@@ -378,7 +366,7 @@ export default function AiPollutionImpactScreen() {
                 <Text style={styles.metricBottomLabel}>Kondisi Kulit</Text>
               </LinearGradient>
 
-              {/* 4. Tingkat Dehidrasi */}
+              {/* 4. Cairan Hilang */}
               <LinearGradient
                 colors={['#3884F7', '#2567EC']}
                 start={{ x: 0, y: 0 }}
@@ -390,7 +378,7 @@ export default function AiPollutionImpactScreen() {
                     <Text style={styles.metricMediumValue}>
                       {data.dehydration_level.value}
                     </Text>
-                    <Text numberOfLines={2} style={styles.metricSubStatus}>
+                    <Text numberOfLines={1} style={styles.metricSubStatus}>
                       {data.dehydration_level.status}
                     </Text>
                   </View>
@@ -398,13 +386,51 @@ export default function AiPollutionImpactScreen() {
                     <WaterGlassIcon size={22} />
                   </View>
                 </View>
-                <Text style={styles.metricBottomLabel}>Tingkat Dehidrasi</Text>
+                <Text style={styles.metricBottomLabel}>Cairan Hilang</Text>
               </LinearGradient>
+            </View>
+
+            {/* ─── Visual Analogy Strip (Icons + Arrows, Zero Paragraph) ─── */}
+            <View style={styles.visualAnalogyCard}>
+              <View style={styles.analogyFlowRow}>
+                <View style={styles.analogyPill}>
+                  <Ionicons name="walk" size={16} color="#2563EB" />
+                  <Text style={styles.analogyPillText}>{outdoorMin} mnt Luar</Text>
+                </View>
+                <Ionicons name="arrow-forward" size={14} color="#94A3B8" />
+                <View style={styles.analogyPill}>
+                  <Ionicons name="cloud-outline" size={16} color="#0284C7" />
+                  <Text style={styles.analogyPillText}>{pm25Ug} µg Debu</Text>
+                </View>
+              </View>
+
+              <View style={styles.analogyFlowRow}>
+                <View style={styles.analogyPill}>
+                  <Ionicons name="sunny" size={16} color="#F59E0B" />
+                  <Text style={styles.analogyPillText}>Udara {ambientC}°C</Text>
+                </View>
+                <Ionicons name="arrow-forward" size={14} color="#94A3B8" />
+                <View style={styles.analogyPill}>
+                  <Ionicons name="thermometer" size={16} color="#EA580C" />
+                  <Text style={styles.analogyPillText}>Terasa {feelC}°C</Text>
+                </View>
+              </View>
+
+              <View style={[styles.analogyFlowRow, { marginBottom: 0 }]}>
+                <View style={styles.analogyPill}>
+                  <Ionicons name="flame" size={16} color="#EF4444" />
+                  <Text style={styles.analogyPillText}>{data.dehydration_level.value} Keringat</Text>
+                </View>
+                <Ionicons name="arrow-forward" size={14} color="#94A3B8" />
+                <View style={styles.analogyPill}>
+                  <Ionicons name="water" size={16} color="#0284C7" />
+                  <Text style={styles.analogyPillText}>+{glasses} Gelas Air</Text>
+                </View>
+              </View>
             </View>
 
             {/* ─── Bottom Section: Rekomendasi Tindakan ───────────────────── */}
             <View style={styles.recommendationsSection}>
-              {/* Badge Rekomendasi Tindakan (Left rounded pill) */}
               <View style={styles.recommendationBadge}>
                 <Ionicons
                   name="checkmark-circle-outline"
@@ -417,39 +443,34 @@ export default function AiPollutionImpactScreen() {
                 </Text>
               </View>
 
-              {/* Sub-label */}
-              <Text style={styles.actionStepsSubtitle}>
-                Langkah yang bisa kamu lakukan sekarang
-              </Text>
-
-              {/* Blue Unified Action Card */}
               <LinearGradient
                 colors={['#2567EC', '#1D57DE']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 0, y: 1 }}
                 style={styles.actionCardContainer}
               >
-                {data.recommendations.map((item, index) => {
-                  const isLast = index === data.recommendations.length - 1;
+                {data.recommendations.slice(0, 3).map((item, index, arr) => {
+                  const isLast = index === arr.length - 1;
+                  const lower = item.title.toLowerCase();
 
                   return (
                     <React.Fragment key={item.id || index}>
                       <View style={styles.actionItemRow}>
-                        {/* Circular Icon Container */}
                         <View style={styles.actionIconCircle}>
-                          {item.icon_type === 'mask' || item.title.toLowerCase().includes('masker') ? (
+                          {item.icon_type === 'mask' || lower.includes('masker') ? (
                             <MaskIcon size={24} />
-                          ) : item.icon_type === 'water' || item.title.toLowerCase().includes('minum') ? (
+                          ) : item.icon_type === 'water' || lower.includes('minum') ? (
                             <WaterGlassIcon size={22} />
                           ) : (
-                            <RedCarIcon size={22} />
+                            <SunShieldIcon size={22} />
                           )}
                         </View>
 
-                        {/* Title and Description */}
                         <View style={styles.actionTextCol}>
                           <Text style={styles.actionItemTitle}>{item.title}</Text>
-                          <Text style={styles.actionItemDesc}>{item.description}</Text>
+                          <Text numberOfLines={1} style={styles.actionItemDesc}>
+                            {item.description}
+                          </Text>
                         </View>
                       </View>
 
@@ -458,70 +479,14 @@ export default function AiPollutionImpactScreen() {
                   );
                 })}
               </LinearGradient>
-
-                {/* ─── Kartu Diagnosa Dokter Spesialis Paru AI (Groq Engine) ─── */}
-                {data.doctor_diagnosis && (
-                  <View style={styles.doctorDiagnosisCard}>
-                    <View style={styles.doctorHeaderRow}>
-                      <View style={styles.doctorIconBox}>
-                        <Ionicons name="medical" size={18} color="#0284C7" />
-                      </View>
-                      <View style={{ flex: 1, marginLeft: 10 }}>
-                        <Text style={styles.doctorNameTitle}>dr. Spesialis Pulmonologi AI</Text>
-                        <Text style={styles.doctorSubTitle}>Groq LLM Engine • Berdasarkan Paparan Mobilitas</Text>
-                      </View>
-                    </View>
-
-                    <Text style={styles.doctorDiagnosisText}>
-                      "{data.doctor_diagnosis}"
-                    </Text>
-
-                    {data.stats && (
-                      <View style={styles.exposureStatsRow}>
-                        <View style={styles.statChip}>
-                          <Ionicons name="time-outline" size={13} color="#64748B" />
-                          <Text style={styles.statChipText}>
-                            Outdoor: {Math.round(data.stats.total_outdoor_minutes || 0)}m
-                          </Text>
-                        </View>
-                        {data.stats.worst_area_name && (
-                          <View style={styles.statChip}>
-                            <Ionicons name="location-outline" size={13} color="#EF4444" />
-                            <Text numberOfLines={1} style={styles.statChipText}>
-                              {data.stats.worst_area_name}
-                            </Text>
-                          </View>
-                        )}
-                        {typeof data.stats.average_outdoor_aqi === 'number' && (
-                          <View style={styles.statChip}>
-                            <Ionicons name="speedometer-outline" size={13} color="#D97706" />
-                            <Text style={styles.statChipText}>
-                              AQI: {Math.round(data.stats.average_outdoor_aqi)}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                    )}
-                  </View>
-                )}
-
-                {/* Button Re-analisis */}
-                <Pressable
-                  style={styles.reanalyzeButton}
-                  onPress={() => runAiAnalysis(true)}
-                >
-                  <Ionicons name="sparkles" size={16} color="#0284C7" style={{ marginRight: 6 }} />
-                  <Text style={styles.reanalyzeButtonText}>Analisis Ulang dengan AI</Text>
-                </Pressable>
-              </View>
-            </>
-          ) : null}
+            </View>
+          </>
+        ) : null}
       </ScrollView>
 
-      {/* Fullscreen AI Analysis Transition & Loading Splash */}
       <PageTransitionSplash
         visible={isLoading}
-        message="Dokter AI sedang menganalisis data paparan polusi..."
+        message="Menganalisis aktivitas & polusi..."
       />
     </View>
   );
@@ -572,7 +537,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 4,
-    marginBottom: 26,
+    marginBottom: 22,
   },
   primaryTitle: {
     fontSize: 21,
@@ -612,30 +577,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  loadingTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginTop: 16,
-  },
-  loadingSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 6,
-    maxWidth: 280,
-    lineHeight: 18,
-  },
   gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     rowGap: GRID_GAP,
-    marginBottom: 24,
+    marginBottom: 14,
   },
   metricCard: {
     width: CARD_WIDTH,
-    height: 126,
+    height: 124,
     borderRadius: 20,
     padding: 14,
     justifyContent: 'space-between',
@@ -651,23 +602,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   metricBigValue: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '800',
     color: '#FFFFFF',
-    lineHeight: 32,
+    lineHeight: 30,
   },
   metricMediumValue: {
-    fontSize: 15,
+    fontSize: 18,
     fontWeight: '800',
     color: '#FFFFFF',
-    lineHeight: 19,
+    lineHeight: 22,
   },
   metricSubStatus: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '500',
-    color: 'rgba(255, 255, 255, 0.88)',
-    marginTop: 2,
-    lineHeight: 13,
+    color: 'rgba(255, 255, 255, 0.90)',
+    marginTop: 3,
   },
   cardIconCircle: {
     width: 38,
@@ -687,8 +637,41 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
+  visualAnalogyCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 20,
+    padding: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  analogyFlowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  analogyPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginHorizontal: 4,
+  },
+  analogyPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
   recommendationsSection: {
-    marginTop: 6,
+    marginTop: 2,
   },
   recommendationBadge: {
     flexDirection: 'row',
@@ -701,6 +684,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 20,
     borderTopRightRadius: 24,
     borderBottomRightRadius: 24,
+    marginBottom: 12,
     shadowColor: '#1E6CEF',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -713,17 +697,10 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 0.2,
   },
-  actionStepsSubtitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#64748B',
-    marginTop: 14,
-    marginBottom: 12,
-  },
   actionCardContainer: {
     borderRadius: 22,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
     shadowColor: '#1E6CEF',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.16,
@@ -762,97 +739,10 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: 'rgba(255, 255, 255, 0.88)',
     marginTop: 2,
-    lineHeight: 16,
   },
   actionItemDivider: {
     height: 1,
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
     marginVertical: 4,
-  },
-  reanalyzeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F0F9FF',
-    borderWidth: 1.5,
-    borderColor: '#BAE6FD',
-    borderRadius: 16,
-    paddingVertical: 12,
-    marginTop: 20,
-  },
-  reanalyzeButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0284C7',
-  },
-  doctorDiagnosisCard: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    borderRadius: 20,
-    padding: 16,
-    marginTop: 18,
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  doctorHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  doctorIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#E0F2FE',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  doctorNameTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  doctorSubTitle: {
-    fontSize: 11,
-    color: '#0284C7',
-    fontWeight: '600',
-    marginTop: 1,
-  },
-  doctorDiagnosisText: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: '#334155',
-    fontStyle: 'italic',
-    fontWeight: '500',
-  },
-  exposureStatsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 12,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-  },
-  statChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-    maxWidth: 180,
-  },
-  statChipText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#475569',
-    marginLeft: 4,
   },
 });

@@ -43,6 +43,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { PageTransitionSplash } from '@/components/splash/AuraCloudSplash';
+import { SevenDaySymptomTimelineCard } from '@/components/forecast/SevenDaySymptomTimelineCard';
 import { JatengInteractiveMap } from '@/components/map/JatengInteractiveMap';
 import { JatengRegionHealth } from '@/services/jatengHealthApi';
 
@@ -411,68 +412,26 @@ export default function PollutionImpactScreen() {
           contentContainerStyle={[styles.mapScrollContent, { paddingTop: topPadding }]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Top Bar Khusus Peta */}
+          {/* Top Bar Khusus Peta Analisis Penyakit (tanpa switcher Peta 3D / Prakiraan 7H) */}
           <View style={styles.mapTopHeaderBar}>
             <Pressable
               onPress={() => router.back()}
               style={styles.backButton}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Ionicons name="arrow-back" size={22} color="#0284C7" />
+              <Ionicons name="arrow-back" size={21} color="#0284C7" />
             </Pressable>
 
-            {/* Segment Tab Switcher: Peta 3D Jateng vs Prakiraan 7 Hari */}
-            <View style={styles.topSegmentContainer}>
-              <Pressable
-                style={[styles.topSegmentButton, styles.topSegmentButtonActive]}
-                onPress={() => setPageViewMode('map')}
-              >
-                <Ionicons
-                  name="map"
-                  size={14}
-                  color="#FFFFFF"
-                  style={{ marginRight: 5 }}
-                />
-                <Text style={[styles.topSegmentText, styles.topSegmentTextActive]}>
-                  Peta 3D
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={styles.topSegmentButton}
-                onPress={() => setPageViewMode('forecast')}
-              >
-                <Ionicons
-                  name="calendar"
-                  size={14}
-                  color="#0284C7"
-                  style={{ marginRight: 5 }}
-                />
-                <Text style={styles.topSegmentText}>
-                  Prakiraan 7H
-                </Text>
-              </Pressable>
+            <View style={styles.mapHeaderCenter}>
+              <Text style={styles.mapHeaderTitle} numberOfLines={1}>
+                Peta Analisis Penyakit
+              </Text>
+              <Text style={styles.mapHeaderSubtitle} numberOfLines={1}>
+                Peta Risiko Jawa Tengah
+              </Text>
             </View>
 
-            <View style={styles.headerRightActions}>
-              <Pressable
-                onPress={() => router.push('/daily-journey')}
-                style={styles.backButton}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                accessibilityLabel="Tracking Harian"
-              >
-                <Ionicons name="map-outline" size={20} color="#0284C7" />
-              </Pressable>
-
-              <Pressable
-                onPress={handleNavigateToAiImpact}
-                style={[styles.backButton, styles.aiHeaderBtn]}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                accessibilityLabel="Analisis Dampak AI"
-              >
-                <Ionicons name="sparkles" size={18} color="#FFFFFF" />
-              </Pressable>
-            </View>
+            <View style={{ width: 40 }} />
           </View>
 
           {/* Komponen Peta Interaktif Jawa Tengah (3D Choropleth, Ikon Landmark, dan Data Open Data Jateng) */}
@@ -528,7 +487,7 @@ export default function PollutionImpactScreen() {
           }
         >
           {/* Top Sky + Landmark Hero Container with DYNAMIC REALTIME LANDSCAPE IMAGE */}
-          <View style={[styles.heroWrapper, { height: HERO_HEIGHT }]}>
+          <View style={[styles.heroWrapper, { minHeight: Math.max(350, HERO_HEIGHT) }]}>
             <Image
               source={getLandscapeAsset(activeLandscape)}
               style={StyleSheet.absoluteFill}
@@ -537,15 +496,15 @@ export default function PollutionImpactScreen() {
               transition={300}
             />
 
-            <View style={[styles.heroContentOverlay, { paddingTop: topPadding }]}>
-              {/* Header Navigation Bar */}
+            <View style={[styles.heroContentOverlay, { paddingTop: topPadding + 4 }]}>
+              {/* Header Navigation Bar with generous non-overlapping spacing */}
               <View style={styles.headerBar}>
                 <Pressable
                   onPress={() => router.back()}
                   style={styles.backButton}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <Ionicons name="arrow-back" size={22} color="#0284C7" />
+                  <Ionicons name="arrow-back" size={21} color="#0284C7" />
                 </Pressable>
 
                 {/* Location Picker Trigger */}
@@ -555,25 +514,16 @@ export default function PollutionImpactScreen() {
                 >
                   <Ionicons
                     name={currentLocation.zone_id ? 'location' : 'navigate-circle'}
-                    size={16}
+                    size={15}
                     color="#0284C7"
                   />
                   <Text numberOfLines={1} style={styles.headerLocationTitle}>
                     {analysisData?.location_name || currentLocation.name}
                   </Text>
-                  <Ionicons name="chevron-down" size={16} color="#64748B" />
+                  <Ionicons name="chevron-down" size={15} color="#64748B" />
                 </Pressable>
 
                 <View style={styles.headerRightActions}>
-                  <Pressable
-                    onPress={handleNavigateToAiImpact}
-                    style={[styles.backButton, styles.aiHeaderBtn]}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    accessibilityLabel="Analisis Dampak AI"
-                  >
-                    <Ionicons name="sparkles" size={18} color="#FFFFFF" />
-                  </Pressable>
-
                   <Pressable
                     onPress={() => {
                       fetchAnalysis();
@@ -582,42 +532,9 @@ export default function PollutionImpactScreen() {
                     style={styles.backButton}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
-                    <Ionicons name="refresh" size={20} color="#0284C7" />
+                    <Ionicons name="refresh" size={19} color="#0284C7" />
                   </Pressable>
                 </View>
-              </View>
-
-              {/* Segment Switcher di atas Hero agar user bisa kembali ke Peta dengan 1 tap */}
-              <View style={styles.forecastTopSegmentContainer}>
-                <Pressable
-                  style={styles.forecastTopSegmentBtn}
-                  onPress={() => setPageViewMode('map')}
-                >
-                  <Ionicons
-                    name="map"
-                    size={13}
-                    color="#FFFFFF"
-                    style={{ marginRight: 5 }}
-                  />
-                  <Text style={styles.forecastTopSegmentText}>
-                    Peta 3D Jateng
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  style={[styles.forecastTopSegmentBtn, styles.forecastTopSegmentBtnActive]}
-                  onPress={() => setPageViewMode('forecast')}
-                >
-                  <Ionicons
-                    name="calendar"
-                    size={13}
-                    color="#0284C7"
-                    style={{ marginRight: 5 }}
-                  />
-                  <Text style={[styles.forecastTopSegmentText, styles.forecastTopSegmentTextActive]}>
-                    Prakiraan 7 Hari
-                  </Text>
-                </Pressable>
               </View>
 
             {/* REAL-TIME TERRAIN BADGE INDICATOR (Derived from User's exact GPS & Altitude) */}
@@ -629,7 +546,7 @@ export default function PollutionImpactScreen() {
                   color="#0284C7"
                   style={{ marginRight: 5 }}
                 />
-                <Text style={styles.realtimeTerrainText}>
+                <Text style={styles.realtimeTerrainText} numberOfLines={1}>
                   {terrainInfo || getLandscapeLabel(activeLandscape)}
                 </Text>
               </View>
@@ -789,153 +706,23 @@ export default function PollutionImpactScreen() {
               </View>
             )}
 
-            {/* 1.5. KARTU ANALISIS AI DAMPAK POLUSI 1-KLIK KE TUBUH */}
-            <Pressable
-              style={styles.aiImpactCard}
-              onPress={handleNavigateToAiImpact}
-              android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
-            >
-              <LinearGradient
-                colors={['#1E6CEF', '#0284C7']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.aiImpactGradient}
-              >
-                <View style={styles.aiImpactTopRow}>
-                  <View style={styles.aiBadgePill}>
-                    <Ionicons name="sparkles" size={13} color="#FACC15" style={{ marginRight: 5 }} />
-                    <Text style={styles.aiBadgeText}>AURA AI HEALTH ENGINE</Text>
-                  </View>
-                  <View style={styles.aiClickPill}>
-                    <Text style={styles.aiClickPillText}>1-Click Analisis</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.aiImpactTitle}>
-                  Analisis Penyakit Berdasarkan Aktivitas dan Polusi
-                </Text>
-                <Text style={styles.aiImpactDesc}>
-                  Model AI memprediksi risiko penyakit &amp; kondisi tubuh (Oksigen, Suhu, Kulit, Dehidrasi) berdasarkan riwayat aktivitas dan paparan polusi Anda.
-                </Text>
-
-                <View style={styles.aiImpactActionRow}>
-                  <Text style={styles.aiImpactActionText}>Mulai Analisis AI Sekarang</Text>
-                  <View style={styles.aiImpactActionCircle}>
-                    <Ionicons name="arrow-forward" size={16} color="#1E6CEF" />
-                  </View>
-                </View>
-              </LinearGradient>
-            </Pressable>
-
-            {/* 1.6. KARTU TRACKING HARIAN (Riwayat Perjalanan & Paparan Aktivitas) */}
-            <Pressable
-              style={styles.trackingCard}
-              onPress={() => router.push('/daily-journey')}
-              android_ripple={{ color: 'rgba(16,185,129,0.12)' }}
-            >
-              <View style={styles.trackingIconBox}>
-                <Ionicons name="map" size={22} color="#059669" />
-              </View>
-              <View style={styles.trackingTextCol}>
-                <Text style={styles.trackingTitle}>Tracking Harian</Text>
-                <Text style={styles.trackingDesc}>
-                  Pantau rute perjalanan &amp; paparan polusi harian untuk analisis aktivitas
-                </Text>
-              </View>
-              <View style={styles.trackingArrowBadge}>
-                <Ionicons name="chevron-forward" size={16} color="#059669" />
-              </View>
-            </Pressable>
-
-            {/* 2. HORIZONTAL CALENDAR / DAY CAROUSEL (7 Days) */}
-            <View style={[styles.sectionHeader, { marginTop: 18 }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Ionicons name="calendar-outline" size={18} color="#0284C7" style={{ marginRight: 6 }} />
-                <Text style={styles.sectionTitle}>Pilih Hari Prakiraan</Text>
-              </View>
-              <Text style={styles.sectionSubtitle}>Ketuk untuk rincian harian</Text>
-            </View>
-
-            {isLoading && !analysisData ? (
-              <View style={styles.loadingCarouselWrapper}>
-                <ActivityIndicator size="small" color="#0284C7" />
-                <Text style={styles.loadingText}>Menyiapkan kalender prakiraan 7 hari...</Text>
-              </View>
-            ) : (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.forecastScrollContent}
-              >
-                {analysisData?.daily_forecast?.map((item, index) => {
-                  const isSelected = index === selectedDayIndex;
-                  const impactCol = getImpactColor(item.impact_level);
-
-                  return (
-                    <Pressable
-                      key={item.date || index}
-                      onPress={() => setSelectedDayIndex(index)}
-                      style={[
-                        styles.forecastCard,
-                        isSelected && styles.forecastCardActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.forecastDay,
-                          isSelected && styles.forecastDayActive,
-                        ]}
-                      >
-                        {item.day_name}
-                      </Text>
-
-                      <Text style={styles.forecastDateText}>
-                        {item.date ? item.date.slice(5) : ''}
-                      </Text>
-
-                      <View style={styles.forecastIconWrapper}>
-                        {getWeatherIcon(item)}
-                      </View>
-
-                      {/* Risk Score Pill */}
-                      <View
-                        style={[
-                          styles.forecastScorePill,
-                          { backgroundColor: impactCol },
-                        ]}
-                      >
-                        <Text style={styles.forecastScorePillText}>
-                          {Math.round(item.health_risk_score)}
-                        </Text>
-                      </View>
-
-                      {/* Status Text */}
-                      <Text
-                        style={[
-                          styles.forecastStatusSmall,
-                          { color: impactCol },
-                        ]}
-                      >
-                        {item.impact_level}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
+            {/* 2. TIMELINE HARIAN PENCEGAHAN GEJALA & PROTEKSI (7-Day Strip + Vertical Timeline) */}
+            {analysisData?.daily_forecast && analysisData.daily_forecast.length > 0 && (
+              <SevenDaySymptomTimelineCard
+                dailyForecast={analysisData.daily_forecast}
+                selectedDayIndex={selectedDayIndex}
+                onSelectDay={setSelectedDayIndex}
+                onPressAiAnalysis={handleNavigateToAiImpact}
+              />
             )}
 
-            {/* 3. RINCIAN HARI TERPILIH (Selected Day Details) */}
+            {/* 3. RINCIAN METRIK HARI TERPILIH (Visual Grid) */}
             {selectedDay && (
               <>
-                <View style={[styles.sectionHeader, { marginTop: 22 }]}>
-                  <View>
-                    <Text style={styles.sectionTitle}>
-                      Detail {selectedDay.day_name} ({selectedDay.date})
-                    </Text>
-                    <Text style={styles.sectionSubtitle}>
-                      {selectedDay.summary}
-                    </Text>
-                  </View>
+                <View style={[styles.sectionHeader, { marginTop: 14 }]}>
+                  <Text style={styles.sectionTitle}>
+                    Parameter Udara • {selectedDay.day_name}
+                  </Text>
                 </View>
 
                 {/* Traffic Severity & Congestion Banner */}
@@ -1341,6 +1128,22 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
+  mapHeaderCenter: {
+    flex: 1,
+    alignItems: 'center',
+    marginHorizontal: 8,
+  },
+  mapHeaderTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  mapHeaderSubtitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#0284C7',
+    marginTop: 1,
+  },
   topSegmentContainer: {
     flexDirection: 'row',
     backgroundColor: '#F1F5F9',
@@ -1473,8 +1276,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   heroContentOverlay: {
-    ...StyleSheet.absoluteFill,
-    paddingHorizontal: 20,
+    width: '100%',
+    paddingHorizontal: 18,
+    paddingBottom: 28,
     zIndex: 10,
   },
   headerBar: {
@@ -1482,12 +1286,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     width: '100%',
-    marginBottom: 4,
+    marginBottom: 14,
   },
   backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1506,13 +1310,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E6CEF',
   },
   headerLocationButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.94)',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 9,
     borderRadius: 20,
-    maxWidth: SCREEN_WIDTH - 120,
+    marginHorizontal: 10,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -1520,22 +1326,24 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   headerLocationTitle: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '700',
     color: '#0F172A',
     marginHorizontal: 6,
+    flexShrink: 1,
   },
   terrainBadgeContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
+    marginBottom: 12,
   },
   realtimeTerrainPill: {
     flexDirection: 'row',
     alignItems: 'center',
+    maxWidth: '90%',
     backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingHorizontal: 13,
+    paddingVertical: 5,
     borderRadius: 16,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 1 },
@@ -1548,11 +1356,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0284C7',
     letterSpacing: 0.3,
+    flexShrink: 1,
   },
   aqiInfoContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
+    paddingTop: 2,
   },
   aqiNumber: {
     fontSize: 66,
