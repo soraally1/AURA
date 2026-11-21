@@ -254,9 +254,9 @@ export default function ActiveTrackingScreen() {
             location.coords.accuracy ?? undefined
           );
 
-          // Auto-sync every 10 unsynced waypoints
+          // Auto-sync every 3 unsynced waypoints so Firestore always has up-to-date route points
           const unsyncedCount = storeState.waypoints.length - storeState.lastSyncedIndex;
-          if (unsyncedCount >= 10) {
+          if (unsyncedCount >= 3) {
             performSync(false);
           }
         }

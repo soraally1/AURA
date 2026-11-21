@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { Platform } from 'react-native';
 import {
   CoughMobilityContext,
   CoughPredictionResponse,
@@ -24,12 +23,10 @@ import { navigationService } from './navigationService';
 import { zonesApi } from './zonesApi';
 import {
   findNearestSemarangRoad,
-  getLocalRoadSegmentCoordinates,
   haversineMeters,
   searchSemarangRoads,
 } from './semarangRoadService';
 import { useTrackingStore } from '@/stores/trackingStore';
-import { useNavigationStore } from '@/stores/navigationStore';
 
 const DEFAULT_AI_URL =
   process.env.EXPO_PUBLIC_AI_API_URL || 'https://onnxaura.vercel.app';
@@ -211,7 +208,6 @@ export const aiService = {
     ]);
 
     const storeState = useTrackingStore.getState();
-    const navState = useNavigationStore.getState();
     const bgWaypoints =
       persistedBgWaypoints.length > 0
         ? persistedBgWaypoints
@@ -244,8 +240,30 @@ export const aiService = {
       context?.location_name ||
       `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
 
-    // 2. Ambil profil user, histori perjalanan harian, zona polusi terdekat, dan telemetri cuaca/polusi Open-Meteo secara paralel
+    // 2. Ambil profil user; jika ada sesi tracking aktif yang belum tersinkron, sinkronkan ke Firestore terlebih dahulu
     const userProfile = await TokenStorage.getUserProfile().catch(() => null);
+    if (
+      userProfile?.uid &&
+      storeState.activeSession?.session_id &&
+      !storeState.activeSession.session_id.startsWith('local_')
+    ) {
+      const unsynced = storeState.getUnsyncedWaypoints();
+      if (unsynced.length > 0) {
+        await navigationService
+          .syncWaypoints(
+            storeState.activeSession.session_id,
+            unsynced,
+            false,
+            userProfile.uid
+          )
+          .then((res) => {
+            if (res.success) {
+              storeState.markWaypointsSynced(unsynced.length);
+            }
+          })
+          .catch(() => null);
+      }
+    }
 
     const [weatherRes, airRes, nearbyZonesRes, dailyHistoryRes, dailyMobilityRes] =
       await Promise.all([
@@ -347,143 +365,14 @@ export const aiService = {
       )
     );
 
-    // 3. Bangun Rute Aktivitas Nyata (Priority: Active Tracking -> Active Navigation Route -> Persisted GPS Trail -> Backend Daily History -> Local Street Segment)
-    let routeSource: ActivityRouteProfile['source'] = 'live_tracking';
-    let rawRouteCoords: {
-      latitude: number;
-      longitude: number;
-      timestamp?: string;
-      aqi?: number;
-      pm25?: number;
-      label?: string;
-    }[] = [];
-
-    // Helper: jika titik-titik GPS yang terekam berjarak jauh (> 100m, misal dari Rumah ke Kawasan POJ),
-    // sambungkan mengikuti geometri jalan non-tol nyata (OSRM avoid_tolls: true)
-    const snapSparseWaypointsToStreets = async (
-      pts: {
-        latitude: number;
-        longitude: number;
-        timestamp?: string;
-        aqi?: number;
-        pm25?: number;
-        label?: string;
-      }[]
-    ) => {
-      if (pts.length < 2 || pts.length > 12) return pts;
-      const stitched: typeof pts = [];
-
-      for (let i = 0; i < pts.length - 1; i++) {
-        const a = pts[i];
-        const b = pts[i + 1];
-        const segDist = haversineMeters(a.latitude, a.longitude, b.latitude, b.longitude);
-
-        if (segDist > 100 && segDist < 35000) {
-          const roadRoute = await navigationService
-            .calculateRoute(
-              { latitude: a.latitude, longitude: a.longitude },
-              { latitude: b.latitude, longitude: b.longitude },
-              { avoid_tolls: true }
-            )
-            .catch(() => null);
-
-          if (roadRoute && roadRoute.coordinates.length >= 2) {
-            roadRoute.coordinates.forEach(([cLon, cLat], rIdx) => {
-              if (i > 0 && rIdx === 0) return;
-              stitched.push({
-                latitude: cLat,
-                longitude: cLon,
-                timestamp: rIdx === 0 ? a.timestamp : b.timestamp,
-              });
-            });
-            continue;
-          }
-        }
-
-        if (i === 0) stitched.push(a);
-        stitched.push(b);
-      }
-
-      return stitched.length >= 2 ? stitched : pts;
-    };
-
-    if (storeState.waypoints.length >= 2) {
-      routeSource = 'live_tracking';
-      rawRouteCoords = await snapSparseWaypointsToStreets(
-        storeState.waypoints.map((wp) => ({
-          latitude: wp.latitude,
-          longitude: wp.longitude,
-          timestamp: wp.timestamp,
-          aqi: wp.aqi,
-          pm25: wp.pm2_5,
-          label: wp.zone_name,
-        }))
-      );
-    } else if (
-      navState.activeRoute &&
-      Array.isArray(navState.activeRoute.coordinates) &&
-      navState.activeRoute.coordinates.length >= 2
-    ) {
-      routeSource = 'live_tracking';
-      rawRouteCoords = navState.activeRoute.coordinates.map(([cLon, cLat]) => ({
-        latitude: cLat,
-        longitude: cLon,
-      }));
-    } else if (bgWaypoints.length >= 2) {
-      routeSource = 'live_tracking';
-      rawRouteCoords = await snapSparseWaypointsToStreets(
-        bgWaypoints.map((wp) => ({
-          latitude: wp.latitude,
-          longitude: wp.longitude,
-          timestamp: wp.timestamp,
-          aqi: wp.aqi,
-          pm25: wp.pm2_5,
-          label: wp.zone_name,
-        }))
-      );
-    } else if (
+    // 3. Ambil Data Rute Tracking MURNI dari Firestore (/api/v1/tracking/daily-history)
+    //    Jika belum ada data tracking di Firestore (< 2 titik), jangan generate rute palsu (activityRoute = undefined).
+    const firestoreWaypoints =
       dailyHistoryRes?.combined_waypoints &&
       dailyHistoryRes.combined_waypoints.length >= 2
-    ) {
-      routeSource = 'daily_history';
-      rawRouteCoords = await snapSparseWaypointsToStreets(
-        dailyHistoryRes.combined_waypoints.map((wp) => ({
-          latitude: wp.latitude,
-          longitude: wp.longitude,
-          timestamp: wp.timestamp,
-          aqi: wp.aqi,
-          pm25: wp.pm2_5,
-          label: wp.zone_name,
-        }))
-      );
-    } else if (
-      dailyMobilityRes?.waypoints &&
-      dailyMobilityRes.waypoints.length >= 2
-    ) {
-      routeSource = 'daily_history';
-      rawRouteCoords = await snapSparseWaypointsToStreets(
-        dailyMobilityRes.waypoints.map((wp) => ({
-          latitude: wp.latitude,
-          longitude: wp.longitude,
-          timestamp: wp.timestamp,
-          aqi: wp.aqi,
-          pm25: wp.pm2_5,
-          label: wp.zone_name,
-        }))
-      );
-    } else {
-      // Pengguna belum berpindah tempat (hanya 1 titik GPS aktif):
-      // Tampilkan segmen jalan lokal tepat di titik GPS pengguna saat ini (TIDAK mengarahkan ke jalan tol!)
-      routeSource = 'gps_road_corridor';
-      const localSeg = getLocalRoadSegmentCoordinates(lat, lon);
-      rawRouteCoords = localSeg.coordinates.map(([cLon, cLat]) => ({
-        latitude: cLat,
-        longitude: cLon,
-        label: localSeg.roadName,
-      }));
-    }
+        ? dailyHistoryRes.combined_waypoints
+        : [];
 
-    // Fungsi interpolasi spasial AQI & PM2.5 nyata di setiap koordinat rute berdasarkan zona terdekat + seri hourly Open-Meteo
     const hourlyAqiArr: number[] = Array.isArray(hourlyAir?.us_aqi)
       ? hourlyAir.us_aqi.filter((v: unknown) => typeof v === 'number' && v > 0)
       : [];
@@ -500,7 +389,6 @@ export const aiService = {
       const road = findNearestSemarangRoad(cLat, cLon);
       const roadLabel = road?.n || locationName;
 
-      // Inverse distance weighting terhadap zona-zona polusi terdekat
       let weightedAqi = 0;
       let weightedPm25 = 0;
       let weightSum = 0;
@@ -520,7 +408,6 @@ export const aiService = {
       const spatialAqi = weightSum > 0 ? weightedAqi / weightSum : liveAqi;
       const spatialPm25 = weightSum > 0 ? weightedPm25 / weightSum : livePm25;
 
-      // Kombinasikan dengan fluktuasi hourly Open-Meteo sepanjang jendela waktu aktivitas
       const hourIdx =
         hourlyAqiArr.length > 0
           ? Math.min(
@@ -548,26 +435,29 @@ export const aiService = {
       return { aqi: finalCoordAqi, pm25: finalCoordPm25, roadLabel };
     };
 
-    const enrichedRouteCoords: ActivityRouteCoordinate[] = rawRouteCoords.map(
+    const enrichedRouteCoords: ActivityRouteCoordinate[] = firestoreWaypoints.map(
       (pt, idx) => {
         const local = computeLocalAqiAtCoord(
           pt.latitude,
           pt.longitude,
           idx,
-          rawRouteCoords.length
+          firestoreWaypoints.length
         );
         return {
           latitude: pt.latitude,
           longitude: pt.longitude,
           aqi: pt.aqi && pt.aqi > 0 ? pt.aqi : local.aqi,
-          pm25: pt.pm25 && pt.pm25 > 0 ? pt.pm25 : local.pm25,
+          pm25: pt.pm2_5 && pt.pm2_5 > 0 ? pt.pm2_5 : local.pm25,
           timestamp: pt.timestamp,
-          label: pt.label || local.roadLabel,
+          label:
+            pt.zone_name && !pt.zone_name.toLowerCase().includes('tol ')
+              ? pt.zone_name
+              : local.roadLabel,
         };
       }
     );
 
-    // Hitung total jarak nyata (Haversine) sepanjang koordinat rute
+    // Hitung jarak nyata dari waypoints Firestore
     let totalRouteMeters = 0;
     for (let i = 0; i < enrichedRouteCoords.length - 1; i++) {
       totalRouteMeters += haversineMeters(
@@ -577,16 +467,19 @@ export const aiService = {
         enrichedRouteCoords[i + 1].longitude
       );
     }
-    if (storeState.totalDistance > totalRouteMeters) {
-      totalRouteMeters = storeState.totalDistance;
-    }
-    const distanceKm = Math.max(0.1, Math.round((totalRouteMeters / 1000) * 100) / 100);
+    const distanceKm =
+      enrichedRouteCoords.length >= 2
+        ? Math.max(0.05, Math.round((totalRouteMeters / 1000) * 100) / 100)
+        : 0;
 
-    // Hitung durasi aktivitas nyata dari timestamp waypoints / store / profil
-    let recordedDurationMin = 0;
-    if (storeState.elapsedSeconds > 30) {
-      recordedDurationMin = Math.round(storeState.elapsedSeconds / 60);
-    } else if (
+    // Hitung durasi dari sesi tracking Firestore
+    let recordedDurationMin =
+      dailyHistoryRes?.daily_stats?.total_outdoor_minutes &&
+      dailyHistoryRes.daily_stats.total_outdoor_minutes > 0
+        ? Math.round(dailyHistoryRes.daily_stats.total_outdoor_minutes)
+        : 0;
+    if (
+      recordedDurationMin <= 0 &&
       enrichedRouteCoords.length >= 2 &&
       enrichedRouteCoords[0].timestamp &&
       enrichedRouteCoords[enrichedRouteCoords.length - 1].timestamp
@@ -596,102 +489,89 @@ export const aiService = {
         enrichedRouteCoords[enrichedRouteCoords.length - 1].timestamp!
       ).getTime();
       if (t1 > t0) {
-        recordedDurationMin = Math.round((t1 - t0) / 60000);
+        recordedDurationMin = Math.max(1, Math.round((t1 - t0) / 60000));
       }
     }
 
-    const trackedOutdoorMin = bgWaypoints
-      .filter((wp) => wp.classification === 'outdoor' && !wp.is_stay)
-      .reduce((acc, wp) => acc + (wp.duration_minutes || 0), 0);
-    const trackedIndoorMin = bgWaypoints
-      .filter((wp) => wp.classification === 'indoor' || wp.is_stay)
-      .reduce((acc, wp) => acc + (wp.duration_minutes || 0), 0);
-
-    const estimatedWalkMinutesFromDist = Math.max(
-      5,
-      Math.round((distanceKm / 4.6) * 60)
-    );
     const profileOutdoorMin =
       userProfile?.waktu_di_jalan && userProfile.waktu_di_jalan > 0
         ? Math.round(userProfile.waktu_di_jalan * 60)
-        : 0;
+        : 30;
 
     const requestedOutdoorMinutes =
-      context?.total_outdoor_minutes && context.total_outdoor_minutes > 0
-        ? context.total_outdoor_minutes
-        : recordedDurationMin > 0
-          ? recordedDurationMin
-          : trackedOutdoorMin > 0
-            ? trackedOutdoorMin
-            : dailyHistoryRes?.daily_stats?.total_outdoor_minutes &&
-                dailyHistoryRes.daily_stats.total_outdoor_minutes > 0
-              ? dailyHistoryRes.daily_stats.total_outdoor_minutes
-              : profileOutdoorMin > 0
-                ? profileOutdoorMin
-                : estimatedWalkMinutesFromDist;
+      recordedDurationMin > 0
+        ? recordedDurationMin
+        : context?.total_outdoor_minutes && context.total_outdoor_minutes > 0
+          ? context.total_outdoor_minutes
+          : profileOutdoorMin;
 
-    // 4. Kirim batch mobilitas nyata ke aurabackend (Groq Pulmonologist AI)
+    // 4. Kirim batch ke aurabackend HANYA jika ada waypoints nyata dari Firestore
     let backendBatch: Awaited<ReturnType<typeof mobilityService.sendBatch>> | null =
       null;
-    try {
-      const sampleStep = Math.max(1, Math.floor(enrichedRouteCoords.length / 8));
-      const sampledWaypoints = enrichedRouteCoords
-        .filter((_, idx) => idx % sampleStep === 0 || idx === enrichedRouteCoords.length - 1)
-        .map((pt, _, arr) => ({
-          latitude: pt.latitude,
-          longitude: pt.longitude,
-          timestamp: pt.timestamp || new Date().toISOString(),
-          duration_minutes: Math.max(
-            1,
-            Math.round((requestedOutdoorMinutes / Math.max(1, arr.length)) * 10) / 10
-          ),
-          is_stay: false,
-        }));
+    if (enrichedRouteCoords.length >= 2) {
+      try {
+        const sampleStep = Math.max(1, Math.floor(enrichedRouteCoords.length / 8));
+        const sampledWaypoints = enrichedRouteCoords
+          .filter((_, idx) => idx % sampleStep === 0 || idx === enrichedRouteCoords.length - 1)
+          .map((pt, _, arr) => ({
+            latitude: pt.latitude,
+            longitude: pt.longitude,
+            timestamp: pt.timestamp || new Date().toISOString(),
+            duration_minutes: Math.max(
+              1,
+              Math.round((requestedOutdoorMinutes / Math.max(1, arr.length)) * 10) / 10
+            ),
+            is_stay: false,
+          }));
 
-      backendBatch = await mobilityService.sendBatch({
-        user_id: userProfile?.uid,
-        date: today,
-        waypoints: sampledWaypoints,
-      });
-    } catch (err) {
-      console.log(
-        '[aiService.analyzePollutionHealthImpact] Menggunakan kalkulasi telemetri langsung:',
-        (err as Error)?.message || err
-      );
+        backendBatch = await mobilityService.sendBatch({
+          user_id: userProfile?.uid,
+          date: today,
+          waypoints: sampledWaypoints,
+        });
+      } catch (err) {
+        console.log(
+          '[aiService.analyzePollutionHealthImpact] Menggunakan kalkulasi telemetri langsung:',
+          (err as Error)?.message || err
+        );
+      }
     }
 
-    const stats = backendBatch?.stats;
-    const analysis = backendBatch?.analysis;
+    const stats = backendBatch?.stats || dailyMobilityRes?.stats;
+    const analysis = backendBatch?.analysis || dailyMobilityRes?.analysis;
 
     const outdoorMinutes = Math.max(
       1,
       Math.round(
-        context?.total_outdoor_minutes ||
-          recordedDurationMin ||
+        recordedDurationMin ||
+          context?.total_outdoor_minutes ||
           stats?.total_outdoor_minutes ||
           requestedOutdoorMinutes
       )
     );
     const indoorMinutes = Math.round(
-      stats?.total_indoor_minutes ||
-        trackedIndoorMin ||
-        dailyHistoryRes?.daily_stats?.total_indoor_minutes ||
+      dailyHistoryRes?.daily_stats?.total_indoor_minutes ||
+        stats?.total_indoor_minutes ||
         0
     );
 
-    // Hitung rata-rata & puncak AQI / PM2.5 langsung dari seluruh koordinat rute nyata
-    const routeAvgAqi = Math.round(
-      enrichedRouteCoords.reduce((acc, c) => acc + c.aqi, 0) /
-        Math.max(1, enrichedRouteCoords.length)
-    );
+    const routeAvgAqi =
+      enrichedRouteCoords.length >= 2
+        ? Math.round(
+            enrichedRouteCoords.reduce((acc, c) => acc + c.aqi, 0) /
+              enrichedRouteCoords.length
+          )
+        : 0;
     const routeAvgPm25 =
-      Math.round(
-        (enrichedRouteCoords.reduce((acc, c) => acc + c.pm25, 0) /
-          Math.max(1, enrichedRouteCoords.length)) *
-          10
-      ) / 10;
+      enrichedRouteCoords.length >= 2
+        ? Math.round(
+            (enrichedRouteCoords.reduce((acc, c) => acc + c.pm25, 0) /
+              enrichedRouteCoords.length) *
+              10
+          ) / 10
+        : 0;
 
-    let peakCoord = enrichedRouteCoords[0];
+    let peakCoord: ActivityRouteCoordinate | undefined = enrichedRouteCoords[0];
     for (const c of enrichedRouteCoords) {
       if (!peakCoord || c.aqi > peakCoord.aqi) {
         peakCoord = c;
@@ -701,52 +581,60 @@ export const aiService = {
     const avgAqi = routeAvgAqi || liveAqi;
     const avgPm25 = routeAvgPm25 || livePm25;
     const worstAreaName =
-      peakCoord?.label || stats?.worst_area_name || locationName;
+      peakCoord?.label ||
+      (dailyHistoryRes?.daily_stats?.worst_area_name &&
+      dailyHistoryRes.daily_stats.worst_area_name !== '-'
+        ? dailyHistoryRes.daily_stats.worst_area_name
+        : undefined) ||
+      locationName;
     const worstAreaAqi = Math.max(
       peakCoord?.aqi || avgAqi,
-      stats?.worst_area_aqi || avgAqi
+      dailyHistoryRes?.daily_stats?.worst_area_aqi || avgAqi
     );
 
-    const startLabel =
-      enrichedRouteCoords[0]?.label ||
-      findNearestSemarangRoad(
-        enrichedRouteCoords[0]?.latitude ?? lat,
-        enrichedRouteCoords[0]?.longitude ?? lon
-      )?.n ||
-      locationName;
-    const endCoord = enrichedRouteCoords[enrichedRouteCoords.length - 1];
-    const endLabel =
-      endCoord?.label ||
-      findNearestSemarangRoad(endCoord?.latitude ?? lat, endCoord?.longitude ?? lon)
-        ?.n ||
-      locationName;
+    let activityRoute: ActivityRouteProfile | undefined = undefined;
+    if (enrichedRouteCoords.length >= 2) {
+      const startLabel =
+        enrichedRouteCoords[0]?.label ||
+        findNearestSemarangRoad(
+          enrichedRouteCoords[0].latitude,
+          enrichedRouteCoords[0].longitude
+        )?.n ||
+        locationName;
+      const endCoord = enrichedRouteCoords[enrichedRouteCoords.length - 1];
+      const endLabel =
+        endCoord?.label ||
+        findNearestSemarangRoad(endCoord.latitude, endCoord.longitude)?.n ||
+        locationName;
 
-    // Bangun seri sparkline dinamis (16 segmen) langsung dari nilai AQI di sepanjang koordinat rute
-    const bucketCount = Math.min(16, Math.max(4, enrichedRouteCoords.length));
-    const exposureSeries: number[] = [];
-    for (let b = 0; b < bucketCount; b++) {
-      const idx = Math.min(
-        enrichedRouteCoords.length - 1,
-        Math.floor((b / Math.max(1, bucketCount - 1)) * (enrichedRouteCoords.length - 1))
-      );
-      exposureSeries.push(enrichedRouteCoords[idx].aqi);
+      const bucketCount = Math.min(16, Math.max(2, enrichedRouteCoords.length));
+      const exposureSeries: number[] = [];
+      for (let b = 0; b < bucketCount; b++) {
+        const idx = Math.min(
+          enrichedRouteCoords.length - 1,
+          Math.floor(
+            (b / Math.max(1, bucketCount - 1)) * (enrichedRouteCoords.length - 1)
+          )
+        );
+        exposureSeries.push(enrichedRouteCoords[idx].aqi);
+      }
+
+      const avgSpeedKmh =
+        Math.round((distanceKm / Math.max(0.05, outdoorMinutes / 60)) * 10) / 10;
+
+      activityRoute = {
+        coordinates: enrichedRouteCoords,
+        distance_km: distanceKm,
+        duration_minutes: outdoorMinutes,
+        avg_speed_kmh: avgSpeedKmh,
+        start_label: startLabel,
+        end_label: endLabel,
+        peak_label: worstAreaName,
+        peak_aqi: worstAreaAqi,
+        exposure_series: exposureSeries,
+        source: 'daily_history',
+      };
     }
-
-    const avgSpeedKmh =
-      Math.round((distanceKm / Math.max(0.05, outdoorMinutes / 60)) * 10) / 10;
-
-    const activityRoute: ActivityRouteProfile = {
-      coordinates: enrichedRouteCoords,
-      distance_km: distanceKm,
-      duration_minutes: outdoorMinutes,
-      avg_speed_kmh: avgSpeedKmh,
-      start_label: startLabel,
-      end_label: endLabel,
-      peak_label: worstAreaName,
-      peak_aqi: worstAreaAqi,
-      exposure_series: exposureSeries,
-      source: routeSource,
-    };
 
     // ─── MODEL BIOFISIKA 1: BEBAN TERMAL TUBUH (ANALOGI LOGIS SUHU & KALOR) ───
     // Rumus Steadman / NOAA Heat Index + Akumulasi Kalor Aktivitas Luar Ruangan

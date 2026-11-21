@@ -511,6 +511,10 @@ export const StravaActivitySummaryCard: React.FC<
       ? `${activityRoute.start_label} → ${activityRoute.end_label}`
       : activityRoute?.peak_label || stats?.worst_area_name || '';
 
+  if (!activityRoute || !activityRoute.coordinates || activityRoute.coordinates.length < 2) {
+    return null;
+  }
+
   return (
     <View style={styles.cardWrapper}>
       {/* ─── REAL MAPLIBRE GL 3D FLYOVER MAP CANVAS ───────────────────────── */}

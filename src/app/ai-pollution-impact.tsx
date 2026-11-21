@@ -286,12 +286,14 @@ export default function AiPollutionImpactScreen() {
           </View>
         ) : data ? (
           <>
-            {/* ─── Strava-Style Real Map Activity Route Flyover Card ──────── */}
-            <StravaActivitySummaryCard
-              activityRoute={data.activity_route}
-              telemetry={data.telemetry}
-              stats={data.stats}
-            />
+            {/* ─── Strava-Style Real Map Card (HANYA tampil jika ada data tracking dari Firestore) ─── */}
+            {data.activity_route && data.activity_route.coordinates.length >= 2 ? (
+              <StravaActivitySummaryCard
+                activityRoute={data.activity_route}
+                telemetry={data.telemetry}
+                stats={data.stats}
+              />
+            ) : null}
 
             {/* ─── 4-Card Grid (2x2) Visual & Minimal Text ───────────────── */}
             <View style={styles.gridContainer}>
