@@ -30,6 +30,11 @@ interface AuthContextType {
   isProfileCompleted: boolean;
   authStatus: AuthCheckReason | null;
   login: (email: string, password: string) => Promise<AuthResponseData>;
+  loginWithGoogle: (params: {
+    idToken?: string;
+    accessToken?: string;
+    name?: string;
+  }) => Promise<AuthResponseData>;
   register: (payload: RegisterPayload) => Promise<AuthResponseData>;
   updateProfile: (payload: UpdateProfilePayload) => Promise<User>;
   logout: () => Promise<void>;
@@ -103,6 +108,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return data;
   };
 
+  const loginWithGoogle = async (params: {
+    idToken?: string;
+    accessToken?: string;
+    name?: string;
+  }): Promise<AuthResponseData> => {
+    const data = await authApi.googleLogin(params);
+    if (data.tokens) {
+      await TokenStorage.saveTokens(data.tokens);
+    }
+    await TokenStorage.setUserProfile(data.user);
+    setUser(data.user);
+    setAuthStatus('valid_token');
+    return data;
+  };
+
   const register = async (payload: RegisterPayload): Promise<AuthResponseData> => {
     const data = await authApi.register({
       ...payload,
@@ -141,6 +161,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     isProfileCompleted: isProfileComplete(user),
     authStatus,
     login,
+    loginWithGoogle,
     register,
     updateProfile,
     logout,

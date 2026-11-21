@@ -6,7 +6,6 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,7 +13,11 @@ import { AuthHeader } from '@/components/auth/AuthHeader';
 import { AuraInput } from '@/components/auth/AuraInput';
 import { GradientButton } from '@/components/auth/GradientButton';
 import { SocialDivider } from '@/components/auth/SocialDivider';
-import { AuthTransition, AnimatedAuthHeader, AnimatedAuthBody } from '@/components/auth/AuthTransition';
+import {
+  GoogleSignInModal,
+  type GoogleAuthPayload,
+} from '@/components/auth/GoogleSignInModal';
+import { AnimatedAuthHeader, AnimatedAuthBody } from '@/components/auth/AuthTransition';
 import { useAuth } from '@/context/auth-context';
 import { getErrorMessage } from '@/utils/error-mapper';
 import { isProfileComplete } from '@/types/auth';
@@ -22,11 +25,12 @@ import { PageTransitionSplash } from '@/components/splash/AuraCloudSplash';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, isAuthenticated, user, isLoading: isAuthLoading } = useAuth();
+  const { login, loginWithGoogle, isAuthenticated, user, isLoading: isAuthLoading } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
@@ -122,7 +126,35 @@ export default function LoginScreen() {
   };
 
   const handleGoogleLogin = () => {
-    Alert.alert('Google Sign-In', 'Fitur Google Sign-In akan segera hadir.');
+    if (isLoading) return;
+    setServerError(null);
+    setShowGoogleModal(true);
+  };
+
+  const handleGoogleAuthSuccess = async (payload: GoogleAuthPayload) => {
+    setShowGoogleModal(false);
+    setServerError(null);
+    try {
+      setIsLoading(true);
+      const res = await loginWithGoogle({
+        idToken: payload.idToken,
+        accessToken: payload.accessToken,
+        name: payload.name,
+      });
+      hasNavigatedRef.current = true;
+      // Cek apakah akun sudah memiliki profil lengkap:
+      // Jika sudah ada & lengkap -> langsung ke Dashboard, jika belum -> ke Complete Profile
+      if (isProfileComplete(res.user)) {
+        router.replace('/dashboard');
+      } else {
+        router.replace('/complete-profile');
+      }
+    } catch (err: any) {
+      hasNavigatedRef.current = false;
+      setServerError(getErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -229,6 +261,13 @@ export default function LoginScreen() {
         </View>
         </AnimatedAuthBody>
       </ScrollView>
+
+      <GoogleSignInModal
+        visible={showGoogleModal}
+        onClose={() => setShowGoogleModal(false)}
+        onSuccess={handleGoogleAuthSuccess}
+        onError={(msg) => setServerError(msg)}
+      />
     </KeyboardAvoidingView>
   );
 }

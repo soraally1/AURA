@@ -28,6 +28,7 @@ import {
   VoiceAgentTurnResponse,
   voiceAgentService,
 } from '@/services/voiceAgentService';
+import { AuraColors } from '@/constants/aura-theme';
 
 type AgentPhase = 'initializing' | 'speaking' | 'ready' | 'listening' | 'processing';
 
@@ -51,7 +52,6 @@ interface VoiceRegistrationAgentProps {
   profile: ProfileDraft;
   onProfileChange: (next: ProfileDraft) => void;
   onReadyToSubmit: (draft: ProfileDraft) => void;
-  onSwitchToManual: () => void;
   isSubmitting?: boolean;
 }
 
@@ -60,7 +60,6 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
   profile,
   onProfileChange,
   onReadyToSubmit,
-  onSwitchToManual,
   isSubmitting = false,
 }) => {
   const audioRecorder = useAudioRecorder(MONO_RECORDING_OPTIONS);
@@ -86,10 +85,15 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
   const startListeningRef = useRef<(() => Promise<void>) | null>(null);
   const ttsPlayerRef = useRef<AudioPlayer | null>(null);
   const ttsSubRef = useRef<{ remove: () => void } | null>(null);
+  const speakWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speakSeqRef = useRef<number>(0);
 
   const stopAllTtsPlayback = useCallback(() => {
     speakSeqRef.current += 1;
+    if (speakWatchdogRef.current) {
+      clearTimeout(speakWatchdogRef.current);
+      speakWatchdogRef.current = null;
+    }
     try {
       Speech.stop();
     } catch {
@@ -156,6 +160,18 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
       }
 
       if (!isMountedRef.current || seqId !== speakSeqRef.current) return;
+
+      const words = text.trim().split(/\s+/).length;
+      const maxDurationMs = Math.max(8000, words * 450 + 3000);
+      speakWatchdogRef.current = setTimeout(() => {
+        if (!isMountedRef.current || seqId !== speakSeqRef.current) return;
+        if (shouldAutoListenAfter && autoListen && phaseRef.current === 'speaking') {
+          void startListeningRef.current?.();
+        } else if (phaseRef.current === 'speaking') {
+          updatePhase('ready');
+        }
+      }, maxDurationMs);
+
       Speech.speak(text, {
         language: 'id-ID',
         voice: bestVoice,
@@ -163,6 +179,10 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
         rate: 0.96,
         onDone: () => {
           if (!isMountedRef.current || seqId !== speakSeqRef.current) return;
+          if (speakWatchdogRef.current) {
+            clearTimeout(speakWatchdogRef.current);
+            speakWatchdogRef.current = null;
+          }
           if (shouldAutoListenAfter && autoListen && phaseRef.current === 'speaking') {
             void startListeningRef.current?.();
           } else {
@@ -191,7 +211,11 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
       const seqId = speakSeqRef.current;
 
       if (!ttsEnabled) {
-        updatePhase('ready');
+        if (shouldAutoListenAfter && autoListen) {
+          void startListeningRef.current?.();
+        } else {
+          updatePhase('ready');
+        }
         return;
       }
 
@@ -211,9 +235,26 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
 
             const player = createAudioPlayer(wavUri, { updateInterval: 100 });
             ttsPlayerRef.current = player;
+
+            const words = text.trim().split(/\s+/).length;
+            const maxDurationMs = Math.max(9000, words * 450 + 3500);
+            speakWatchdogRef.current = setTimeout(() => {
+              if (!isMountedRef.current || seqId !== speakSeqRef.current) return;
+              stopAllTtsPlayback();
+              if (shouldAutoListenAfter && autoListen) {
+                void startListeningRef.current?.();
+              } else {
+                updatePhase('ready');
+              }
+            }, maxDurationMs);
+
             ttsSubRef.current = player.addListener('playbackStatusUpdate', (st) => {
               if (!isMountedRef.current || seqId !== speakSeqRef.current) return;
               if (st.didJustFinish) {
+                if (speakWatchdogRef.current) {
+                  clearTimeout(speakWatchdogRef.current);
+                  speakWatchdogRef.current = null;
+                }
                 try {
                   ttsSubRef.current?.remove();
                 } catch {
@@ -299,7 +340,7 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
         });
         if (!active) return;
         applyAgentTurnResponse(res);
-      } catch (err: any) {
+      } catch {
         if (!active) return;
         const fallbackGreeting = `Halo${userName ? ` ${userName}` : ''}! Saya asisten suara AURA. Sekarang usia kamu berapa tahun?`;
         const nextHistory: VoiceChatMessage[] = [
@@ -307,13 +348,7 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
         ];
         messagesRef.current = nextHistory;
         setMessages(nextHistory);
-        const status = err?.response?.status;
-        if (status === 404) {
-          setAgentError(
-            'Endpoint AI agent di server belum terdeploy. Silakan deploy aurabackend terbaru ke Vercel.'
-          );
-        }
-        speakAssistantReply(fallbackGreeting, false);
+        speakAssistantReply(fallbackGreeting, true);
       }
     };
 
@@ -321,7 +356,6 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
     return () => {
       active = false;
     };
-    // Run once on mount for dynamic greeting
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -345,6 +379,11 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
         if (audioRecorder.isRecording) {
           await audioRecorder.stop();
         }
+        await setAudioModeAsync({
+          allowsRecording: false,
+          playsInSilentMode: true,
+          shouldRouteThroughEarpiece: false,
+        });
         const rawUri = audioRecorder.uri;
         if (!rawUri) {
           throw new Error('File rekaman suara tidak ditemukan.');
@@ -390,7 +429,7 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
     const perm = await requestRecordingPermissionsAsync();
     if (!perm.granted) {
       setAgentError(
-        'Izin mikrofon ditolak. Aktifkan izin mikrofon atau gunakan mode Isi Manual.'
+        'Izin mikrofon ditolak. Aktifkan izin mikrofon atau ketik langsung pada kolom di bawah.'
       );
       updatePhase('ready');
       return;
@@ -467,8 +506,11 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
       const totalElapsed = now - listenStartTsRef.current;
       const silentElapsed = now - lastVoiceTsRef.current;
 
-      // Auto-submit cleanly after user finishes speaking and pauses ~1.6s, or 10s max turn
-      if ((hasSpokenInTurnRef.current && silentElapsed >= 1650 && totalElapsed >= 1400) || totalElapsed >= 10000) {
+      // Auto-submit cleanly after user finishes speaking and pauses ~1.5s, or 10s max turn
+      if (
+        (hasSpokenInTurnRef.current && silentElapsed >= 1500 && totalElapsed >= 1350) ||
+        totalElapsed >= 10000
+      ) {
         void finishListeningRef.current?.();
       }
     }, 140);
@@ -479,11 +521,7 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
   const handleSendTyped = async () => {
     const clean = typedText.trim();
     if (!clean || phase === 'processing') return;
-    try {
-      Speech.stop();
-    } catch {
-      // ignore
-    }
+    stopAllTtsPlayback();
     setTypedText('');
     setAgentError(null);
     updatePhase('processing');
@@ -506,171 +544,98 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
     }
   };
 
-  const fields = [
-    {
-      key: 'usia' as const,
-      label: 'Usia',
-      value: profile.usia !== null ? `${profile.usia} thn` : 'Belum diisi',
-      filled: profile.usia !== null,
-      icon: 'calendar-outline' as const,
-    },
-    {
-      key: 'tinggi_badan' as const,
-      label: 'Tinggi Badan',
-      value: profile.tinggi_badan !== null ? `${profile.tinggi_badan} cm` : 'Belum diisi',
-      filled: profile.tinggi_badan !== null,
-      icon: 'resize-outline' as const,
-    },
-    {
-      key: 'berat_badan' as const,
-      label: 'Berat Badan',
-      value: profile.berat_badan !== null ? `${profile.berat_badan} kg` : 'Belum diisi',
-      filled: profile.berat_badan !== null,
-      icon: 'fitness-outline' as const,
-    },
-    {
-      key: 'waktu_di_jalan' as const,
-      label: 'Di Jalan / Hari',
-      value:
-        profile.waktu_di_jalan !== null
-          ? `${profile.waktu_di_jalan} jam`
-          : 'Belum diisi',
-      filled: profile.waktu_di_jalan !== null,
-      icon: 'walk-outline' as const,
-    },
-  ];
+  const filledCount = [
+    profile.usia,
+    profile.tinggi_badan,
+    profile.berat_badan,
+    profile.waktu_di_jalan,
+  ].filter((v) => v !== null).length;
 
-  const filledCount = fields.filter((f) => f.filled).length;
-  const allComplete = filledCount === 4;
+  const latestAiMsg =
+    [...messages].reverse().find((m) => m.role === 'assistant')?.content ||
+    'Menyiapkan percakapan dengan AURA AI...';
+  const latestUserMsg = [...messages].reverse().find((m) => m.role === 'user')?.content;
 
   return (
     <View style={styles.root}>
-      {/* Live Dynamic Profile Slots Card */}
-      <View style={styles.slotsCard}>
-        <View style={styles.slotsHeaderRow}>
-          <View style={styles.slotsBadge}>
-            <Ionicons name="sparkles" size={12} color="#1E6CEF" />
-            <Text style={styles.slotsBadgeText}>PENGISIAN FORM OTOMATIS</Text>
+      {/* Aura Light-Themed AI Voice Assistant Card matching Login & Register */}
+      <View style={styles.voiceCard}>
+        {/* Top Header Row: Badge + Audio Toggles */}
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.aiBadge}>
+            <Ionicons name="sparkles" size={13} color={AuraColors.primary} />
+            <Text style={styles.aiBadgeText}>ASISTEN SUARA AURA ({filledCount}/4)</Text>
           </View>
-          <Text style={styles.slotsCountText}>{filledCount}/4 Terisi</Text>
-        </View>
 
-        <View style={styles.slotsGrid}>
-          {fields.map((f) => (
+          <View style={styles.togglesRow}>
             <Pressable
-              key={f.key}
-              onPress={onSwitchToManual}
-              style={[styles.slotItem, f.filled && styles.slotItemFilled]}
+              style={[styles.miniPill, ttsEnabled && styles.miniPillActive]}
+              onPress={() => {
+                if (ttsEnabled) stopAllTtsPlayback();
+                setTtsEnabled((v) => !v);
+              }}
             >
-              <View style={styles.slotTop}>
-                <Ionicons
-                  name={f.icon}
-                  size={14}
-                  color={f.filled ? '#1E6CEF' : '#94A3B8'}
-                />
-                <Text style={styles.slotLabel}>{f.label}</Text>
-                {f.filled && (
-                  <Ionicons name="checkmark-circle" size={15} color="#10B981" />
-                )}
-              </View>
-              <Text
-                style={[styles.slotValue, !f.filled && styles.slotValueEmpty]}
-                numberOfLines={1}
-              >
-                {f.value}
+              <Ionicons
+                name={ttsEnabled ? 'volume-high' : 'volume-mute'}
+                size={13}
+                color={ttsEnabled ? AuraColors.primary : '#64748B'}
+              />
+              <Text style={[styles.miniPillText, ttsEnabled && styles.miniPillTextActive]}>
+                {ttsEnabled ? 'Suara On' : 'Mati'}
               </Text>
             </Pressable>
-          ))}
-        </View>
-      </View>
 
-      {/* Voice Controls Header Toggles */}
-      <View style={styles.controlsStrip}>
-        <Pressable
-          style={[styles.togglePill, ttsEnabled && styles.togglePillActive]}
-          onPress={() => {
-            if (ttsEnabled) stopAllTtsPlayback();
-            setTtsEnabled((v) => !v);
-          }}
-        >
-          <Ionicons
-            name={ttsEnabled ? 'volume-high' : 'volume-mute'}
-            size={14}
-            color={ttsEnabled ? '#1E6CEF' : '#64748B'}
-          />
-          <Text style={[styles.togglePillText, ttsEnabled && styles.togglePillTextActive]}>
-            Suara AI: {ttsEnabled ? 'Aktif' : 'Mati'}
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={[styles.togglePill, autoListen && styles.togglePillActive]}
-          onPress={() => setAutoListen((v) => !v)}
-        >
-          <Ionicons
-            name="sync"
-            size={13}
-            color={autoListen ? '#1E6CEF' : '#64748B'}
-          />
-          <Text style={[styles.togglePillText, autoListen && styles.togglePillTextActive]}>
-            Auto-Dengar: {autoListen ? 'Ya' : 'Manual'}
-          </Text>
-        </Pressable>
-      </View>
-
-      {/* Conversation Bubbles */}
-      <View style={styles.chatCard}>
-        {messages.length === 0 ? (
-          <View style={styles.initRow}>
-            <ActivityIndicator size="small" color="#1E6CEF" />
-            <Text style={styles.initText}>Menyiapkan percakapan dengan AURA AI...</Text>
+            <Pressable
+              style={[styles.miniPill, autoListen && styles.miniPillActive]}
+              onPress={() => setAutoListen((v) => !v)}
+            >
+              <Ionicons
+                name="sync"
+                size={12}
+                color={autoListen ? AuraColors.primary : '#64748B'}
+              />
+              <Text style={[styles.miniPillText, autoListen && styles.miniPillTextActive]}>
+                {autoListen ? 'Auto' : 'Manual'}
+              </Text>
+            </Pressable>
           </View>
-        ) : (
-          messages.slice(-6).map((m, idx) => {
-            const isAi = m.role === 'assistant';
-            return (
-              <View
-                key={`${m.role}-${idx}`}
-                style={[styles.bubbleRow, isAi ? styles.bubbleLeft : styles.bubbleRight]}
-              >
-                <Pressable
-                  disabled={!isAi}
-                  onPress={() => isAi && speakAssistantReply(m.content, false)}
-                  style={[styles.bubble, isAi ? styles.aiBubble : styles.userBubble]}
-                >
-                  <View style={styles.bubbleMeta}>
-                    <Text
-                      style={[
-                        styles.bubbleSender,
-                        isAi ? styles.aiSenderText : styles.userSenderText,
-                      ]}
-                    >
-                      {isAi ? 'AURA AI' : 'Kamu (Suara)'}
-                    </Text>
-                    {isAi && (
-                      <Ionicons name="volume-medium-outline" size={13} color="#1E6CEF" />
-                    )}
-                  </View>
-                  <Text style={[styles.bubbleBody, isAi ? styles.aiBody : styles.userBody]}>
-                    {m.content}
-                  </Text>
-                </Pressable>
-              </View>
-            );
-          })
-        )}
-      </View>
-
-      {/* Error Alert Banner */}
-      {agentError ? (
-        <View style={styles.errorBanner}>
-          <Ionicons name="alert-circle" size={16} color="#DC2626" />
-          <Text style={styles.errorText}>{agentError}</Text>
         </View>
-      ) : null}
 
-      {/* Interactive Voice Mic Button */}
-      <View style={styles.micSection}>
+        {/* Active Conversation Bubble */}
+        <View style={styles.dialogueBox}>
+          {messages.length === 0 ? (
+            <View style={styles.initRow}>
+              <ActivityIndicator size="small" color={AuraColors.primary} />
+              <Text style={styles.initText}>Menyiapkan suara asisten AURA...</Text>
+            </View>
+          ) : (
+            <>
+              <Pressable
+                onPress={() => speakAssistantReply(latestAiMsg, false)}
+                style={styles.aiMessageRow}
+              >
+                <View style={styles.aiAvatarCircle}>
+                  <Ionicons name="volume-medium" size={16} color="#FFFFFF" />
+                </View>
+                <View style={styles.aiTextCol}>
+                  <Text style={styles.aiSenderLabel}>AURA AI • Ketuk untuk putar ulang</Text>
+                  <Text style={styles.aiMessageText}>{latestAiMsg}</Text>
+                </View>
+              </Pressable>
+
+              {latestUserMsg ? (
+                <View style={styles.userReplyChip}>
+                  <Ionicons name="mic" size={13} color={AuraColors.primary} />
+                  <Text style={styles.userReplyText} numberOfLines={1}>
+                    Jawabanmu: “{latestUserMsg}”
+                  </Text>
+                </View>
+              ) : null}
+            </>
+          )}
+        </View>
+
+        {/* Live Voice Level Indicator when Listening */}
         {phase === 'listening' && (
           <View style={styles.levelWrap}>
             <Text style={styles.levelLabel}>
@@ -683,8 +648,8 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
                 style={[
                   styles.levelFill,
                   {
-                    width: `${Math.max(6, micLevelPct)}%`,
-                    backgroundColor: micLevelPct >= 18 ? '#10B981' : '#60A5FA',
+                    width: `${Math.max(8, micLevelPct)}%`,
+                    backgroundColor: micLevelPct >= 18 ? '#10B981' : AuraColors.primary,
                   },
                 ]}
               />
@@ -692,6 +657,15 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
           </View>
         )}
 
+        {/* Error Alert Banner */}
+        {agentError ? (
+          <View style={styles.errorBanner}>
+            <Ionicons name="alert-circle" size={16} color="#DC2626" />
+            <Text style={styles.errorText}>{agentError}</Text>
+          </View>
+        ) : null}
+
+        {/* Primary Microphone Action Button */}
         <Pressable
           disabled={phase === 'processing' || phase === 'initializing' || isSubmitting}
           onPress={() => {
@@ -707,10 +681,10 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
             colors={
               phase === 'listening'
                 ? ['#EF4444', '#DC2626']
-                : phase === 'speaking'
-                ? ['#0EA5E9', '#1E6CEF']
-                : ['#2563EB', '#1D4ED8']
+                : ['#4A9CF4', AuraColors.primary]
             }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
             style={styles.micButton}
           >
             {phase === 'processing' || phase === 'initializing' ? (
@@ -724,7 +698,7 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
                     ? 'mic-outline'
                     : 'mic'
                 }
-                size={22}
+                size={20}
                 color="#FFFFFF"
               />
             )}
@@ -737,16 +711,16 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
                 ? 'Mendengarkan... Ketuk Selesai'
                 : phase === 'processing'
                 ? 'Memahami Jawabanmu...'
-                : 'Ketuk & Bicara'}
+                : 'Ketuk & Bicara dengan AURA'}
             </Text>
           </LinearGradient>
         </Pressable>
 
-        {/* Optional Quick Text Input Fallback */}
+        {/* Quick Conversational Chat Input */}
         <View style={styles.textFallbackRow}>
           <TextInput
             style={styles.textFallbackInput}
-            placeholder="Atau ketik jawaban di sini (opsional)..."
+            placeholder="Atau balas percakapan AI di sini..."
             placeholderTextColor="#94A3B8"
             value={typedText}
             onChangeText={setTypedText}
@@ -761,30 +735,10 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
               (!typedText.trim() || phase === 'processing') && { opacity: 0.45 },
             ]}
           >
-            <Ionicons name="send" size={16} color="#FFFFFF" />
+            <Ionicons name="send" size={15} color="#FFFFFF" />
           </Pressable>
         </View>
       </View>
-
-      {/* Direct Confirm & Continue to Dashboard CTA */}
-      {allComplete && (
-        <Pressable
-          onPress={() => onReadyToSubmit(profileRef.current)}
-          disabled={isSubmitting}
-          style={styles.completeCtaWrap}
-        >
-          <LinearGradient colors={['#10B981', '#059669']} style={styles.completeCta}>
-            {isSubmitting ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <Ionicons name="checkmark-done-circle" size={20} color="#FFFFFF" />
-            )}
-            <Text style={styles.completeCtaText}>
-              {isSubmitting ? 'Menyimpan Profil...' : 'Konfirmasi & Lanjut ke Dashboard'}
-            </Text>
-          </LinearGradient>
-        </Pressable>
-      )}
 
       {/* Hidden WebView Direct PCM Recorder & WAV Converter */}
       <AudioToWavConverter ref={converterRef} />
@@ -794,121 +748,80 @@ export const VoiceRegistrationAgent: React.FC<VoiceRegistrationAgentProps> = ({
 
 const styles = StyleSheet.create({
   root: {
-    gap: 12,
+    marginBottom: 16,
   },
-  slotsCard: {
+  voiceCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
     padding: 14,
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
-    shadowColor: '#1E3A8A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE',
+    shadowColor: '#2373F4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+    gap: 11,
   },
-  slotsHeaderRow: {
+  cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  slotsBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  slotsBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#1E6CEF',
-    letterSpacing: 0.4,
-  },
-  slotsCountText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#1E6CEF',
-  },
-  slotsGrid: {
-    flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
   },
-  slotItem: {
-    width: '48.5%',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  slotItemFilled: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#93C5FD',
-  },
-  slotTop: {
+  aiBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
   },
-  slotLabel: {
-    flex: 1,
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  slotValue: {
-    fontSize: 14.5,
+  aiBadgeText: {
+    fontSize: 10.5,
     fontWeight: '800',
-    color: '#0F172A',
-    marginTop: 4,
+    color: AuraColors.primary,
+    letterSpacing: 0.3,
   },
-  slotValueEmpty: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#94A3B8',
-  },
-  controlsStrip: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  togglePill: {
-    flex: 1,
+  togglesRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 6,
-    paddingVertical: 8,
+  },
+  miniPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderRadius: 999,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  togglePillActive: {
+  miniPillActive: {
     backgroundColor: '#EFF6FF',
     borderColor: '#BFDBFE',
   },
-  togglePillText: {
-    fontSize: 11.5,
+  miniPillText: {
+    fontSize: 11,
     fontWeight: '600',
     color: '#64748B',
   },
-  togglePillTextActive: {
-    color: '#1E6CEF',
+  miniPillTextActive: {
+    color: AuraColors.primary,
     fontWeight: '700',
   },
-  chatCard: {
+  dialogueBox: {
     backgroundColor: '#F8FAFC',
-    borderRadius: 18,
+    borderRadius: 14,
     padding: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    minHeight: 150,
     gap: 8,
   },
   initRow: {
@@ -916,64 +829,82 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 30,
+    paddingVertical: 10,
   },
   initText: {
     fontSize: 12.5,
     color: '#475569',
     fontWeight: '500',
   },
-  bubbleRow: {
+  aiMessageRow: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
   },
-  bubbleLeft: {
-    justifyContent: 'flex-start',
+  aiAvatarCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: AuraColors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
   },
-  bubbleRight: {
-    justifyContent: 'flex-end',
+  aiTextCol: {
+    flex: 1,
+    gap: 2,
   },
-  bubble: {
-    maxWidth: '88%',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+  aiSenderLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: AuraColors.primary,
   },
-  aiBubble: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
-    borderBottomLeftRadius: 4,
+  aiMessageText: {
+    fontSize: 13.5,
+    lineHeight: 19,
+    color: '#1E293B',
+    fontWeight: '600',
   },
-  userBubble: {
-    backgroundColor: '#1E6CEF',
-    borderBottomRightRadius: 4,
-  },
-  bubbleMeta: {
+  userReplyChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 6,
-    marginBottom: 2,
+    alignSelf: 'flex-end',
+    gap: 5,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
   },
-  bubbleSender: {
-    fontSize: 10,
-    fontWeight: '800',
+  userReplyText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#1E40AF',
   },
-  aiSenderText: {
-    color: '#1E6CEF',
+  levelWrap: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    padding: 9,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    gap: 5,
   },
-  userSenderText: {
-    color: '#DBEAFE',
+  levelLabel: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#1E40AF',
+    textAlign: 'center',
   },
-  bubbleBody: {
-    fontSize: 13,
-    lineHeight: 18.5,
+  levelTrack: {
+    height: 6,
+    backgroundColor: '#DBEAFE',
+    borderRadius: 4,
+    overflow: 'hidden',
   },
-  aiBody: {
-    color: '#0F172A',
-  },
-  userBody: {
-    color: '#FFFFFF',
+  levelFill: {
+    height: '100%',
+    borderRadius: 4,
   },
   errorBanner: {
     flexDirection: 'row',
@@ -981,7 +912,7 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: '#FEF2F2',
     borderRadius: 12,
-    padding: 10,
+    padding: 9,
     borderWidth: 1,
     borderColor: '#FECACA',
   },
@@ -991,53 +922,26 @@ const styles = StyleSheet.create({
     color: '#B91C1C',
     fontWeight: '500',
   },
-  micSection: {
-    gap: 10,
-  },
-  levelWrap: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    gap: 6,
-  },
-  levelLabel: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#1E40AF',
-    textAlign: 'center',
-  },
-  levelTrack: {
-    height: 7,
-    backgroundColor: '#DBEAFE',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  levelFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
   micPressable: {
     borderRadius: 999,
     overflow: 'hidden',
-    shadowColor: '#1E6CEF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowColor: '#2373F4',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 3,
   },
   micButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 15,
-    paddingHorizontal: 18,
-    gap: 10,
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    gap: 8,
     borderRadius: 999,
   },
   micButtonText: {
-    fontSize: 14.5,
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#FFFFFF',
   },
@@ -1050,36 +954,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
     borderRadius: 999,
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 13,
+    paddingVertical: 8,
+    fontSize: 12.5,
     color: '#0F172A',
   },
   sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1E6CEF',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: AuraColors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  completeCtaWrap: {
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  completeCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 15,
-    gap: 8,
-    borderRadius: 999,
-  },
-  completeCtaText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#FFFFFF',
   },
 });

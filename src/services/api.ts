@@ -176,6 +176,25 @@ export const authApi = {
   },
 
   /**
+   * Login / Register user with Google OAuth ID Token or Access Token
+   * POST /api/auth/google
+   */
+  googleLogin: async (payload: {
+    idToken?: string;
+    accessToken?: string;
+    name?: string;
+  }): Promise<AuthResponseData> => {
+    const res = await api.post<ApiResponse<AuthResponseData>>(
+      '/api/auth/google',
+      payload
+    );
+    if (!res.data.success) {
+      throw res.data;
+    }
+    return res.data.data;
+  },
+
+  /**
    * Get current authenticated user profile
    * GET /api/auth/me
    */

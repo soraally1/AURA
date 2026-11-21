@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -29,11 +29,18 @@ export default function CompleteProfileScreen() {
 
   const { register, updateProfile, isAuthenticated, user } = useAuth();
 
-  const [usia, setUsia] = useState('');
-  const [tinggiBadan, setTinggiBadan] = useState('');
-  const [beratBadan, setBeratBadan] = useState('');
-  const [waktuDiJalan, setWaktuDiJalan] = useState('');
-  const [inputMode, setInputMode] = useState<'voice' | 'manual'>('voice');
+  const [usia, setUsia] = useState(user?.usia ? String(user.usia) : '');
+  const [tinggiBadan, setTinggiBadan] = useState(
+    user?.tinggi_badan ? String(user.tinggi_badan) : ''
+  );
+  const [beratBadan, setBeratBadan] = useState(
+    user?.berat_badan ? String(user.berat_badan) : ''
+  );
+  const [waktuDiJalan, setWaktuDiJalan] = useState(
+    user?.waktu_di_jalan !== undefined && user?.waktu_di_jalan !== null
+      ? String(user.waktu_di_jalan)
+      : ''
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [errors, setErrors] = useState<{
@@ -42,18 +49,6 @@ export default function CompleteProfileScreen() {
     beratBadan?: string;
     waktuDiJalan?: string;
   }>({});
-
-  // Prepopulate if user already exists
-  useEffect(() => {
-    if (user) {
-      if (user.usia && !usia) setUsia(String(user.usia));
-      if (user.tinggi_badan && !tinggiBadan) setTinggiBadan(String(user.tinggi_badan));
-      if (user.berat_badan && !beratBadan) setBeratBadan(String(user.berat_badan));
-      if (user.waktu_di_jalan !== undefined && user.waktu_di_jalan !== null && !waktuDiJalan) {
-        setWaktuDiJalan(String(user.waktu_di_jalan));
-      }
-    }
-  }, [user]);
 
   const validate = () => {
     const newErrors: {
@@ -119,12 +114,13 @@ export default function CompleteProfileScreen() {
     berat_badan: beratBadan.trim()
       ? parseFloat(beratBadan.trim().replace(',', '.')) || null
       : null,
-    waktu_di_jalan: waktuDiJalan.trim() !== ''
-      ? (() => {
-          const parsed = parseFloat(waktuDiJalan.trim().replace(',', '.'));
-          return isNaN(parsed) ? null : parsed;
-        })()
-      : null,
+    waktu_di_jalan:
+      waktuDiJalan.trim() !== ''
+        ? (() => {
+            const parsed = parseFloat(waktuDiJalan.trim().replace(',', '.'));
+            return isNaN(parsed) ? null : parsed;
+          })()
+        : null,
   };
 
   const handleVoiceDraftChange = (draft: ProfileDraft) => {
@@ -178,7 +174,7 @@ export default function CompleteProfileScreen() {
         });
         router.replace('/dashboard');
       } else if (isAuthenticated) {
-        // Alur update profil (misal setelah login Google atau akun yang belum lengkap datanya)
+        // Alur update profil (setelah login Google atau akun yang belum lengkap datanya)
         await updateProfile({
           usia: parsedUsia,
           tinggi_badan: parsedTinggi,
@@ -187,7 +183,6 @@ export default function CompleteProfileScreen() {
         });
         router.replace('/dashboard');
       } else {
-        // Jika sedang diuji langsung tanpa parameter registrasi
         router.replace('/dashboard');
       }
     } catch (err: any) {
@@ -201,7 +196,7 @@ export default function CompleteProfileScreen() {
   const handleBackPress = () => {
     if (params.name && params.email) {
       router.back();
-    } else if (isAuthenticated) {
+    } else if (isAuthenticated && isProfileComplete(user)) {
       router.replace('/dashboard');
     } else {
       router.replace('/');
@@ -220,7 +215,7 @@ export default function CompleteProfileScreen() {
         bounces={true}
         showsVerticalScrollIndicator={true}
       >
-        {/* Curved Organic Header (Compact so form fits nicely) with swap animation */}
+        {/* Curved Organic Header matching Login & Register */}
         <AnimatedAuthHeader>
           <AuthHeader
             title="Tentang kamu"
@@ -231,166 +226,117 @@ export default function CompleteProfileScreen() {
           />
         </AnimatedAuthHeader>
 
-        {/* Form Body with slide-up animation */}
+        {/* Form Body with slide-up animation (Unified Voice AI + Direct Manual Form without duplicate tabs) */}
         <AnimatedAuthBody delay={180}>
-        <View className="px-7 pt-3 pb-8">
-          {/* Dynamic Mode Switcher: Asisten Suara AI vs Isi Manual */}
-          <View className="flex-row bg-blue-50 border border-blue-100 rounded-full p-1 mb-4">
-            <Pressable
-              onPress={() => setInputMode('voice')}
-              className={`flex-1 flex-row items-center justify-center gap-1.5 py-2.5 rounded-full ${
-                inputMode === 'voice' ? 'bg-aura-primary' : ''
-              }`}
-            >
-              <Ionicons
-                name="mic"
-                size={15}
-                color={inputMode === 'voice' ? '#FFFFFF' : '#2563EB'}
-              />
-              <Text
-                className={`text-xs font-bold ${
-                  inputMode === 'voice' ? 'text-white' : 'text-blue-700'
-                }`}
-              >
-                Asisten Suara AI
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setInputMode('manual')}
-              className={`flex-1 flex-row items-center justify-center gap-1.5 py-2.5 rounded-full ${
-                inputMode === 'manual' ? 'bg-aura-primary' : ''
-              }`}
-            >
-              <Ionicons
-                name="create-outline"
-                size={15}
-                color={inputMode === 'manual' ? '#FFFFFF' : '#2563EB'}
-              />
-              <Text
-                className={`text-xs font-bold ${
-                  inputMode === 'manual' ? 'text-white' : 'text-blue-700'
-                }`}
-              >
-                Isi Form Manual
-              </Text>
-            </Pressable>
-          </View>
+          <View className="px-7 pt-3 pb-8">
+            {/* Server Error Alert Banner */}
+            {serverError ? (
+              <View className="flex-row items-center gap-2 bg-red-50 border border-red-200 p-3 rounded-xl mb-4">
+                <Ionicons name="alert-circle" size={20} color="#EF4444" />
+                <Text className="text-[13px] text-red-700 flex-1 font-medium">
+                  {serverError}
+                </Text>
+              </View>
+            ) : null}
 
-          {/* Server Error Alert Banner */}
-          {serverError ? (
-            <View className="flex-row items-center gap-2 bg-red-50 border border-red-200 p-3 rounded-xl mb-4">
-              <Ionicons name="alert-circle" size={20} color="#EF4444" />
-              <Text className="text-[13px] text-red-700 flex-1 font-medium">
-                {serverError}
-              </Text>
-            </View>
-          ) : null}
-
-          {inputMode === 'voice' ? (
+            {/* Real-Time AI Voice Assistant Card (auto-fills the ProfileInput fields below) */}
             <VoiceRegistrationAgent
               userName={params.name || user?.name}
               profile={currentDraft}
               onProfileChange={handleVoiceDraftChange}
               onReadyToSubmit={(draft) => void handleContinue(draft)}
-              onSwitchToManual={() => setInputMode('manual')}
               isSubmitting={isLoading}
             />
-          ) : (
-          <>
-          {/* Usia Input */}
-          <ProfileInput
-            label="Usia"
-            placeholder="Contoh: 25"
-            unit="tahun"
-            value={usia}
-            onChangeText={(text) => {
-              setUsia(text);
-              if (serverError) setServerError(null);
-              if (errors.usia) setErrors((prev) => ({ ...prev, usia: undefined }));
-            }}
-            keyboardType="number-pad"
-            error={errors.usia}
-          />
 
-          {/* Tinggi Badan Input */}
-          <ProfileInput
-            label="Tinggi badan"
-            placeholder="Contoh: 170"
-            unit="cm"
-            value={tinggiBadan}
-            onChangeText={(text) => {
-              setTinggiBadan(text);
-              if (serverError) setServerError(null);
-              if (errors.tinggiBadan) {
-                setErrors((prev) => ({ ...prev, tinggiBadan: undefined }));
-              }
-            }}
-            keyboardType="decimal-pad"
-            error={errors.tinggiBadan}
-          />
+            {/* Direct Profile Inputs (filled automatically by Voice AI or typed directly) */}
+            <ProfileInput
+              label="Usia"
+              placeholder="Contoh: 25"
+              unit="tahun"
+              value={usia}
+              onChangeText={(text) => {
+                setUsia(text);
+                if (serverError) setServerError(null);
+                if (errors.usia) setErrors((prev) => ({ ...prev, usia: undefined }));
+              }}
+              keyboardType="number-pad"
+              error={errors.usia}
+            />
 
-          {/* Berat Badan Input */}
-          <ProfileInput
-            label="Berat badan"
-            placeholder="Contoh: 65"
-            unit="kg"
-            value={beratBadan}
-            onChangeText={(text) => {
-              setBeratBadan(text);
-              if (serverError) setServerError(null);
-              if (errors.beratBadan) {
-                setErrors((prev) => ({ ...prev, beratBadan: undefined }));
-              }
-            }}
-            keyboardType="decimal-pad"
-            error={errors.beratBadan}
-          />
+            <ProfileInput
+              label="Tinggi badan"
+              placeholder="Contoh: 170"
+              unit="cm"
+              value={tinggiBadan}
+              onChangeText={(text) => {
+                setTinggiBadan(text);
+                if (serverError) setServerError(null);
+                if (errors.tinggiBadan) {
+                  setErrors((prev) => ({ ...prev, tinggiBadan: undefined }));
+                }
+              }}
+              keyboardType="decimal-pad"
+              error={errors.tinggiBadan}
+            />
 
-          {/* Waktu di Jalan Input */}
-          <ProfileInput
-            label="Waktu di jalan setiap hari"
-            placeholder="Contoh: 2"
-            unit="jam/hari"
-            value={waktuDiJalan}
-            onChangeText={(text) => {
-              setWaktuDiJalan(text);
-              if (serverError) setServerError(null);
-              if (errors.waktuDiJalan) {
-                setErrors((prev) => ({ ...prev, waktuDiJalan: undefined }));
-              }
-            }}
-            keyboardType="decimal-pad"
-            helperText="Hitung total waktu perjalananmu dalam sehari, termasuk pergi dan pulang."
-            error={errors.waktuDiJalan}
-          />
+            <ProfileInput
+              label="Berat badan"
+              placeholder="Contoh: 65"
+              unit="kg"
+              value={beratBadan}
+              onChangeText={(text) => {
+                setBeratBadan(text);
+                if (serverError) setServerError(null);
+                if (errors.beratBadan) {
+                  setErrors((prev) => ({ ...prev, beratBadan: undefined }));
+                }
+              }}
+              keyboardType="decimal-pad"
+              error={errors.beratBadan}
+            />
 
-          {/* Action Button: Lanjut ke Dashboard */}
-          <GradientButton
-            title="Lanjut ke Dashboard"
-            onPress={() => void handleContinue()}
-            isLoading={isLoading}
-            className="mt-4"
-          />
-          </>
-          )}
+            <ProfileInput
+              label="Waktu di jalan setiap hari"
+              placeholder="Contoh: 2"
+              unit="jam/hari"
+              value={waktuDiJalan}
+              onChangeText={(text) => {
+                setWaktuDiJalan(text);
+                if (serverError) setServerError(null);
+                if (errors.waktuDiJalan) {
+                  setErrors((prev) => ({ ...prev, waktuDiJalan: undefined }));
+                }
+              }}
+              keyboardType="decimal-pad"
+              helperText="Hitung total waktu perjalananmu dalam sehari, termasuk pergi dan pulang."
+              error={errors.waktuDiJalan}
+            />
 
-          {/* Optional Direct Navigation if profile is already complete */}
-          {isAuthenticated && isProfileComplete(user) ? (
-            <Pressable
-              onPress={() => router.replace('/dashboard')}
-              className="mt-3.5 py-2 items-center justify-center active:opacity-70"
-            >
-              <Text className="text-aura-primary text-sm font-semibold">
-                Kembali ke Dashboard
-              </Text>
-            </Pressable>
-          ) : null}
+            {/* Action Button: Lanjut ke Dashboard */}
+            <GradientButton
+              title="Lanjut ke Dashboard"
+              onPress={() => void handleContinue()}
+              isLoading={isLoading}
+              className="mt-4"
+            />
 
-          {/* Footer Explanation Note */}
-          <Text className="text-center text-slate-500 text-[13.5px] mt-4 font-normal">
-            Agar rekomendasi Aura lebih sesuai untukmu.
-          </Text>
-        </View>
+            {/* Optional Direct Navigation if profile is already complete */}
+            {isAuthenticated && isProfileComplete(user) ? (
+              <Pressable
+                onPress={() => router.replace('/dashboard')}
+                className="mt-3.5 py-2 items-center justify-center active:opacity-70"
+              >
+                <Text className="text-aura-primary text-sm font-semibold">
+                  Kembali ke Dashboard
+                </Text>
+              </Pressable>
+            ) : null}
+
+            {/* Footer Explanation Note */}
+            <Text className="text-center text-slate-500 text-[13.5px] mt-4 font-normal">
+              Agar rekomendasi Aura lebih sesuai untukmu.
+            </Text>
+          </View>
         </AnimatedAuthBody>
       </ScrollView>
     </KeyboardAvoidingView>

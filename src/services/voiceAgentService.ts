@@ -35,9 +35,11 @@ export interface VoiceAgentTurnResponse {
   model_used?: string;
 }
 
+const ttsInFlightCache = new Map<string, Promise<string | null>>();
+
 export const voiceAgentService = {
   /**
-   * Memulai percakapan atau mengirim giliran teks ke agen registrasi dinamis (GROQ_AURA_AGENT).
+   * Memulai percakapan atau mengirim giliran teks ke agen registrasi dinamis (GROQ_AURA_AGENT di aurabackend).
    */
   sendTextTurn: async (params: {
     userName?: string;
@@ -62,7 +64,7 @@ export const voiceAgentService = {
   },
 
   /**
-   * Mengirim audio rekaman suara pengguna ke server untuk STT (Groq Whisper)
+   * Mengirim audio rekaman suara pengguna ke server aurabackend untuk STT (Groq Whisper)
    * sekaligus ekstraksi form dinamis & balasan suara AI dalam 1 request.
    */
   sendVoiceTurn: async (params: {
@@ -98,7 +100,7 @@ export const voiceAgentService = {
 
   /**
    * Sintesis suara natural Bahasa Indonesia langsung dari model neural ONNX self-hosted
-   * (/api/tts di onnxaura, tanpa API berbayar / tanpa ElevenLabs API) dengan cache lokal.
+   * (/api/tts di onnxaura) dengan cache lokal & in-flight deduplication.
    */
   synthesizeSpeechUri: async (text: string): Promise<string | null> => {
     const clean = text.trim();
@@ -110,28 +112,46 @@ export const voiceAgentService = {
       if (info.exists && (info.size ?? 0) > 1024) {
         return cachePath;
       }
-
-      const res = await axios.post<{
-        success: boolean;
-        audio_base64?: string;
-      }>(
-        `${AI_API_URL}/api/tts`,
-        { text: clean, speed: 1.02, format: 'json' },
-        {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 12000,
-        }
-      );
-
-      if (res.data?.success && res.data.audio_base64) {
-        await FileSystem.writeAsStringAsync(cachePath, res.data.audio_base64, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        return cachePath;
-      }
-      return null;
     } catch {
-      return null;
+      // ignore cache check error
     }
+
+    const existing = ttsInFlightCache.get(cachePath);
+    if (existing) {
+      return existing;
+    }
+
+    const reqPromise = (async (): Promise<string | null> => {
+      try {
+        const res = await axios.post<{
+          success: boolean;
+          audio_base64?: string;
+          data?: { audio_base64?: string };
+        }>(
+          `${AI_API_URL}/api/tts`,
+          { text: clean, speed: 1.02, format: 'json' },
+          {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 12000,
+          }
+        );
+
+        const audioBase64 = res.data?.audio_base64 || res.data?.data?.audio_base64;
+        if (res.data?.success && audioBase64) {
+          await FileSystem.writeAsStringAsync(cachePath, audioBase64, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          return cachePath;
+        }
+        return null;
+      } catch {
+        return null;
+      } finally {
+        ttsInFlightCache.delete(cachePath);
+      }
+    })();
+
+    ttsInFlightCache.set(cachePath, reqPromise);
+    return reqPromise;
   },
 };

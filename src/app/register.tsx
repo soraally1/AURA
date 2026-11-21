@@ -6,7 +6,6 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +13,10 @@ import { AuthHeader } from '@/components/auth/AuthHeader';
 import { AuraInput } from '@/components/auth/AuraInput';
 import { GradientButton } from '@/components/auth/GradientButton';
 import { SocialDivider } from '@/components/auth/SocialDivider';
+import {
+  GoogleSignInModal,
+  type GoogleAuthPayload,
+} from '@/components/auth/GoogleSignInModal';
 import { AnimatedAuthHeader, AnimatedAuthBody } from '@/components/auth/AuthTransition';
 import { useAuth } from '@/context/auth-context';
 import { getErrorMessage } from '@/utils/error-mapper';
@@ -22,13 +25,14 @@ import { PageTransitionSplash } from '@/components/splash/AuraCloudSplash';
 
 export default function RegisterScreen() {
   const router = useRouter();
-  const { register, isAuthenticated, user, isLoading: isAuthLoading } = useAuth();
+  const { loginWithGoogle, isAuthenticated, user, isLoading: isAuthLoading } = useAuth();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [errors, setErrors] = useState<{
     name?: string;
@@ -138,7 +142,33 @@ export default function RegisterScreen() {
   };
 
   const handleGoogleRegister = () => {
-    Alert.alert('Google Sign-Up', 'Fitur Google Sign-Up akan segera hadir.');
+    if (isLoading) return;
+    setServerError(null);
+    setShowGoogleModal(true);
+  };
+
+  const handleGoogleAuthSuccess = async (payload: GoogleAuthPayload) => {
+    setShowGoogleModal(false);
+    setServerError(null);
+    try {
+      setIsLoading(true);
+      const res = await loginWithGoogle({
+        idToken: payload.idToken,
+        accessToken: payload.accessToken,
+        name: payload.name,
+      });
+      hasNavigatedRef.current = true;
+      if (isProfileComplete(res.user)) {
+        router.replace('/dashboard');
+      } else {
+        router.replace('/complete-profile');
+      }
+    } catch (err: any) {
+      hasNavigatedRef.current = false;
+      setServerError(getErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -227,23 +257,12 @@ export default function RegisterScreen() {
             error={errors.confirmPassword}
           />
 
-          {/* Forgot Password Link (as seen on the mockup) */}
-          <Pressable
-            onPress={() => router.push('/forgot-password')}
-            className="self-start mt-0.5 mb-6 active:opacity-70"
-            hitSlop={8}
-          >
-            <Text className="text-aura-primary text-sm font-medium">
-              Lupa password kamu?
-            </Text>
-          </Pressable>
-
           {/* Action Button */}
           <GradientButton
             title="Lanjutkan"
             onPress={handleRegister}
             isLoading={isLoading}
-            className="mt-1"
+            className="mt-2"
           />
           {/* Sudah punya akun? Masuk */}
           <Pressable
@@ -264,6 +283,13 @@ export default function RegisterScreen() {
         </View>
         </AnimatedAuthBody>
       </ScrollView>
+
+      <GoogleSignInModal
+        visible={showGoogleModal}
+        onClose={() => setShowGoogleModal(false)}
+        onSuccess={handleGoogleAuthSuccess}
+        onError={(msg) => setServerError(msg)}
+      />
     </KeyboardAvoidingView>
   );
 }
